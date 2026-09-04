@@ -1,0 +1,75 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, "Segoe UI", sans-serif;
+  background: #0d0f12;
+  color: #f6f1e7;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  width: 390px;
+  min-height: 420px;
+  margin: 0;
+  background:
+    radial-gradient(circle at 85% 0%, rgba(255, 84, 48, 0.2), transparent 38%),
+    #0d0f12;
+}
+
+header, footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+}
+
+header { border-bottom: 1px solid #292c31; }
+footer { border-top: 1px solid #292c31; gap: 10px; }
+
+h1 { margin: 2px 0 0; font: 700 24px/1.1 Georgia, serif; }
+.eyebrow { margin: 0; color: #ff6b46; font-size: 10px; font-weight: 800; letter-spacing: 0.18em; }
+#platform { border: 1px solid #444950; border-radius: 999px; padding: 6px 10px; color: #b8bdc5; font-size: 11px; text-transform: uppercase; }
+main { min-height: 290px; padding: 16px 20px; }
+#status { margin: 0 0 14px; color: #aeb3bb; font-size: 13px; line-height: 1.5; }
+#media-list { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; }
+
+.media-row {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #292c31;
+  background: #15181c;
+}
+
+.kind {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 38px;
+  background: #22262b;
+  color: #ff7a58;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.media-copy strong { display: block; font-size: 13px; }
+.media-copy small { display: block; max-width: 190px; margin-top: 3px; overflow: hidden; color: #777e88; text-overflow: ellipsis; white-space: nowrap; }
+
+button {
+  min-height: 36px;
+  border: 1px solid #3b4047;
+  border-radius: 2px;
+  padding: 0 14px;
+  background: transparent;
+  color: #e8e4dc;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:hover { border-color: #ff6b46; }
+button.primary { border-color: #ff6b46; background: #ff6b46; color: #111; }
+button:disabled { cursor: not-allowed; opacity: 0.45; }
+.media-row button { min-height: 30px; padding: 0 10px; font-size: 12px; }

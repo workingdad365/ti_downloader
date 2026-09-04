@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ti_downloader</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">CURRENT POST</p>
+        <h1>ti_downloader</h1>
+      </div>
+      <span id="platform">...</span>
+    </header>
+
+    <main>
+      <p id="status">현재 게시물의 미디어를 찾는 중입니다.</p>
+      <div id="media-list" aria-live="polite"></div>
+    </main>
+
+    <footer>
+      <button id="refresh" type="button">다시 검색</button>
+      <button id="download-all" class="primary" type="button" disabled>모두 다운로드</button>
+    </footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

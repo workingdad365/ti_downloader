@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "ti_downloader",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Download media from the current Instagram or TikTok post.",
+  "permissions": ["activeTab", "downloads", "storage", "offscreen"],
+  "host_permissions": [
+    "*://*.instagram.com/*",
+    "*://*.cdninstagram.com/*",
+    "*://*.fbcdn.net/*",
+    "*://*.tiktok.com/*",
+    "*://*.tiktokcdn.com/*",
+    "*://*.tiktokcdn-us.com/*",
+    "*://*.tiktokv.com/*",
+    "*://*.byteoversea.com/*",
+    "*://*.ibytedtos.com/*",
+    "*://*.muscdn.com/*",
+    "*://*.akamaized.net/*"
+  ],
+  "action": {
+    "default_title": "ti_downloader",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.instagram.com/*", "*://*.tiktok.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.instagram.com/*", "*://*.tiktok.com/*"],
+      "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}
