@@ -6,6 +6,13 @@ let overlayButton;
 let instagramResolveCache;
 let lastInstagramResolveError = "";
 
+const OVERLAY_ICONS = {
+  download: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/></svg>',
+  loading: '<svg class="ti-spin" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/></svg>',
+  success: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.485 1.929a.75.75 0 0 1 .086 1.057l-7 8.25a.75.75 0 0 1-1.08.065l-3.5-3.25a.75.75 0 1 1 1.018-1.102l2.926 2.717 6.493-7.651a.75.75 0 0 1 1.057-.086"/></svg>',
+  error: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.938 2.016a.13.13 0 0 1 .125 0l6.857 11.667c.036.06.042.101.038.125a.13.13 0 0 1-.063.093.13.13 0 0 1-.07.016H1.175a.13.13 0 0 1-.117-.066c-.01-.018-.013-.05.005-.082zM8.5 5.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 1 0zm0 5.5a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0"/></svg>'
+};
+
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== location.origin) return;
   if (event.data?.source !== "ti_downloader_page" || event.data?.type !== "MEDIA_FOUND") return;
@@ -284,7 +291,7 @@ function refreshDownloadOverlays() {
   const rect = mediaElement.getBoundingClientRect();
   overlayHost.style.display = "block";
   overlayHost.style.top = `${Math.max(8, rect.top + 44)}px`;
-  overlayHost.style.left = `${Math.max(8, rect.right - 86)}px`;
+  overlayHost.style.left = `${Math.max(8, rect.right - 40)}px`;
 }
 
 function findVisibleMediaElement() {
@@ -314,7 +321,7 @@ function ensureOverlay() {
     all: "initial",
     position: "fixed",
     zIndex: "2147483647",
-    width: "76px",
+    width: "30px",
     height: "28px",
     pointerEvents: "auto"
   });
@@ -322,28 +329,32 @@ function ensureOverlay() {
   const shadow = overlayHost.attachShadow({ mode: "closed" });
   overlayButton = document.createElement("button");
   overlayButton.type = "button";
-  overlayButton.textContent = "Download";
-  overlayButton.setAttribute("aria-label", "Download this video");
+  setOverlayButtonState(overlayButton, "download");
   Object.assign(overlayButton.style, {
     all: "initial",
-    display: "block",
+    display: "grid",
+    placeItems: "center",
     boxSizing: "border-box",
-    width: "76px",
+    width: "30px",
     height: "28px",
     border: "1px solid rgba(255,255,255,.3)",
     borderRadius: "6px",
     background: "rgba(15,15,18,.58)",
     boxShadow: "0 2px 10px rgba(0,0,0,.22)",
     color: "rgba(255,255,255,.92)",
-    font: '600 11px/26px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    textAlign: "center",
     cursor: "pointer"
   });
+  const style = document.createElement("style");
+  style.textContent = `
+    button svg { width: 15px; height: 15px; fill: currentColor; display: block; }
+    .ti-spin { animation: ti-spin .8s linear infinite; }
+    @keyframes ti-spin { to { transform: rotate(360deg); } }
+  `;
   ["pointerdown", "mousedown", "mouseup"].forEach((type) => {
     overlayButton.addEventListener(type, stopOverlayEvent, true);
   });
   overlayButton.addEventListener("click", (event) => downloadFromOverlay(event, overlayButton), true);
-  shadow.append(overlayButton);
+  shadow.append(style, overlayButton);
   document.documentElement.append(overlayHost);
 }
 
@@ -355,7 +366,7 @@ async function downloadFromOverlay(event, button) {
   event.preventDefault();
   event.stopPropagation();
   button.disabled = true;
-  button.textContent = "Finding...";
+  setOverlayButtonState(button, "loading");
 
   await refreshMedia();
   refreshDownloadOverlays();
@@ -372,7 +383,7 @@ async function downloadFromOverlay(event, button) {
     ? visibleItem
     : mediaForUi().find((candidate) => candidate.kind === kind);
   if (!item) {
-    showButtonResult(button, "Not found");
+    showButtonResult(button, false, "Media not found");
     return;
   }
 
@@ -380,10 +391,9 @@ async function downloadFromOverlay(event, button) {
   const filename = `ti_downloader/${downloadSlug()}-${timestampSlug()}.${extension}`;
   try {
     const response = await downloadMedia(item, filename);
-    showButtonResult(button, response?.ok ? "Started" : "Failed");
+    showButtonResult(button, response?.ok, response?.ok ? "Download started" : "Download failed");
   } catch (error) {
-    button.title = error.message;
-    showButtonResult(button, "Failed");
+    showButtonResult(button, false, error.message);
   }
 }
 
@@ -625,10 +635,22 @@ function isAllowedInstagramVideoUrl(rawUrl) {
   }
 }
 
-function showButtonResult(button, label) {
-  button.textContent = label;
+function setOverlayButtonState(button, state, label) {
+  button.innerHTML = OVERLAY_ICONS[state];
+  const accessibleLabel = label || {
+    download: "Download",
+    loading: "Finding media",
+    success: "Download started",
+    error: "Download failed"
+  }[state];
+  button.setAttribute("aria-label", accessibleLabel);
+  button.title = accessibleLabel;
+}
+
+function showButtonResult(button, success, label) {
+  setOverlayButtonState(button, success ? "success" : "error", label);
   setTimeout(() => {
-    button.textContent = "Download";
+    setOverlayButtonState(button, "download");
     button.disabled = false;
   }, 1800);
 }
