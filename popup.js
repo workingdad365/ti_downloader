@@ -3,6 +3,9 @@ const platformElement = document.querySelector("#platform");
 const listElement = document.querySelector("#media-list");
 const refreshButton = document.querySelector("#refresh");
 const downloadAllButton = document.querySelector("#download-all");
+const versionElement = document.querySelector("#version");
+
+versionElement.textContent = `v${chrome.runtime.getManifest().version}`;
 
 let activeTab;
 let media = [];
@@ -88,7 +91,7 @@ async function downloadItems(items) {
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
     const extension = extensionFor(item);
-    const filename = `ti_downloader/${slug}-${batchTimestamp}-${String(index + 1).padStart(2, "0")}.${extension}`;
+    const filename = `ti_downloader-${slug}-${batchTimestamp}-${String(index + 1).padStart(2, "0")}.${extension}`;
     const response = await chrome.tabs.sendMessage(activeTab.id, {
       type: "DOWNLOAD_PAGE_MEDIA",
       item,

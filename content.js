@@ -388,7 +388,7 @@ async function downloadFromOverlay(event, button) {
   }
 
   const extension = item.kind === "video" ? "mp4" : imageExtension(item.url);
-  const filename = `ti_downloader/${downloadSlug()}-${timestampSlug()}.${extension}`;
+  const filename = `ti_downloader-${downloadSlug()}-${timestampSlug()}.${extension}`;
   try {
     const response = await downloadMedia(item, filename);
     showButtonResult(button, response?.ok, response?.ok ? "Download started" : "Download failed");

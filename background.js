@@ -11,17 +11,8 @@ const ALLOWED_MEDIA_HOSTS = [
   "muscdn.com",
   "akamaized.net"
 ];
-const pendingFilenames = new Map();
 const remoteDownloads = new Map();
 let creatingOffscreenDocument;
-
-chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-  const filename = pendingFilenames.get(item.url) || pendingFilenames.get(item.finalUrl);
-  if (!filename) return;
-  pendingFilenames.delete(item.url);
-  pendingFilenames.delete(item.finalUrl);
-  suggest({ filename, conflictAction: "uniquify" });
-});
 
 chrome.downloads.onChanged.addListener((delta) => {
   if (!delta.state || !["complete", "interrupted"].includes(delta.state.current)) return;
@@ -72,29 +63,20 @@ async function downloadMedia(rawUrl, rawFilename) {
     throw new Error("허용되지 않은 미디어 주소입니다.");
   }
 
-  const filename = sanitizeFilename(rawFilename || "ti_downloader/media");
-  pendingFilenames.set(url.href, filename);
-  setTimeout(() => pendingFilenames.delete(url.href), 30000);
+  const filename = sanitizeFilename(rawFilename || "media");
 
-  try {
-    return await chrome.downloads.download({
-      url: url.href,
-      filename,
-      conflictAction: "uniquify",
-      saveAs: false
-    });
-  } catch (error) {
-    pendingFilenames.delete(url.href);
-    throw error;
-  }
+  return chrome.downloads.download({
+    url: url.href,
+    filename,
+    conflictAction: "uniquify",
+    saveAs: false
+  });
 }
 
 async function downloadBlob(rawUrl, rawFilename) {
   const url = new URL(rawUrl);
   if (url.protocol !== "blob:") throw new Error("올바르지 않은 Blob 주소입니다.");
-  const filename = sanitizeFilename(rawFilename || "ti_downloader/media");
-  pendingFilenames.set(url.href, filename);
-  setTimeout(() => pendingFilenames.delete(url.href), 30000);
+  const filename = sanitizeFilename(rawFilename || "media");
   return chrome.downloads.download({
     url: url.href,
     filename,
@@ -117,8 +99,7 @@ async function downloadInstagramProgressive(rawUrl, rawFilename) {
   });
   if (!result?.ok || !result.blobUrl) throw new Error(result?.error || "영상 fetch 실패");
 
-  const filename = sanitizeFilename(rawFilename || "ti_downloader/instagram-video.mp4");
-  pendingFilenames.set(result.blobUrl, filename);
+  const filename = sanitizeFilename(rawFilename || "instagram-video.mp4");
   let downloadId;
   try {
     downloadId = await chrome.downloads.download({
@@ -194,8 +175,8 @@ function isAllowedHost(hostname) {
 
 function sanitizeFilename(filename) {
   return filename
-    .replace(/[<>:"|?*\\]/g, "_")
+    .replace(/[<>:"|?*\\/]/g, "_")
     .replace(/\.{2,}/g, ".")
-    .replace(/^[/\\]+/, "")
+    .replace(/^[._]+/, "")
     .slice(0, 180);
 }
