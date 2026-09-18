@@ -1,6 +1,10 @@
 # ti_downloader
 
-현재 열린 Instagram 또는 TikTok 게시물에서 감지한 영상과 이미지를 다운로드하는 Manifest V3 Chrome 확장이다.
+현재 열린 Instagram 또는 TikTok 게시물에서 감지한 영상과 이미지를 다운로드하는 Manifest V3 Chrome 확장.
+
+
+
+<img src="screenshot.jpg" style="width: 30%;" />
 
 ## 설치
 
