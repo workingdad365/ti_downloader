@@ -3,14 +3,33 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ti_downloader</title>
+    <title>TI Downloader</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <header>
-      <div>
-        <p class="eyebrow">CURRENT POST</p>
-        <h1>ti_downloader <span id="version"></span></h1>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+          <defs>
+            <linearGradient id="logo-gradient" x1="4" y1="44" x2="44" y2="4" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#feda75"/>
+              <stop offset="0.3" stop-color="#fa7e1e"/>
+              <stop offset="0.55" stop-color="#d62976"/>
+              <stop offset="0.8" stop-color="#962fbf"/>
+              <stop offset="1" stop-color="#4f5bd5"/>
+            </linearGradient>
+            <g id="logo-note" fill="none" stroke-width="3.6" stroke-linecap="round">
+              <circle cx="21" cy="29" r="5"/>
+              <path d="M26 29V14c.5 3.5 3 5.5 6 5.8"/>
+            </g>
+          </defs>
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="none" stroke="url(#logo-gradient)" stroke-width="4"/>
+          <circle cx="36" cy="12" r="2.6" fill="url(#logo-gradient)"/>
+          <use href="#logo-note" x="-1.2" y="-1.2" stroke="#25f4ee"/>
+          <use href="#logo-note" x="1.2" y="1.2" stroke="#fe2c55"/>
+          <use href="#logo-note" stroke="#fff"/>
+        </svg>
+        <h1>TI Downloader <span id="version"></span></h1>
       </div>
       <span id="platform">...</span>
     </header>
