@@ -29,7 +29,7 @@ footer { border-top: 1px solid #292c31; gap: 10px; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .logo { flex: none; width: 36px; height: 36px; }
 h1 { margin: 0; font: 700 22px/1.1 Georgia, serif; }
-#version { color: #8b9099; font: 400 11px/1 system-ui, sans-serif; vertical-align: middle; }
+#version { display: block; margin-top: 4px; color: #8b9099; font: 400 11px/1 system-ui, sans-serif; }
 #platform { border: 1px solid #444950; border-radius: 999px; padding: 6px 10px; color: #b8bdc5; font-size: 11px; text-transform: uppercase; }
 main { min-height: 290px; padding: 16px 20px; }
 #status { margin: 0 0 14px; color: #aeb3bb; font-size: 13px; line-height: 1.5; }
@@ -37,7 +37,7 @@ main { min-height: 290px; padding: 16px 20px; }
 
 .media-row {
   display: grid;
-  grid-template-columns: 48px 1fr auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px;
@@ -74,4 +74,4 @@ button {
 button:hover { border-color: #ff6b46; }
 button.primary { border-color: #ff6b46; background: #ff6b46; color: #111; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
-.media-row button { min-height: 30px; padding: 0 10px; font-size: 12px; }
+.media-row button { min-height: 30px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
