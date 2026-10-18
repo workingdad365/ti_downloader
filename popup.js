@@ -17,14 +17,14 @@ downloadAllButton.addEventListener("click", () => downloadItems(media));
 loadMedia();
 
 async function loadMedia() {
-  setStatus("현재 게시물의 미디어를 찾는 중입니다.");
+  setStatus("Looking for media in the current post...");
   listElement.replaceChildren();
   downloadAllButton.disabled = true;
 
   [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!activeTab?.id || !isSupportedUrl(activeTab.url)) {
     platformElement.textContent = "unsupported";
-    setStatus("Instagram 또는 TikTok 게시물 페이지에서 실행해 주세요.");
+    setStatus("Open an Instagram or TikTok post to use this extension.");
     return;
   }
 
@@ -36,23 +36,23 @@ async function loadMedia() {
     platformElement.textContent = response?.platform || "unknown";
     renderMedia();
   } catch (error) {
-    setStatus("페이지를 새로고침한 뒤 다시 시도해 주세요.");
+    setStatus("Reload the page, then try again.");
   }
 }
 
 function renderMedia() {
   if (!media.length) {
     setStatus(instagramVideoDisabled
-      ? "안전을 위해 Instagram 영상 다운로드를 비활성화했습니다. 이미지만 다운로드할 수 있습니다."
-      : resolveError || "미디어를 찾지 못했습니다. 게시물을 재생하거나 넘긴 뒤 다시 검색해 주세요.");
+      ? "Instagram video downloads are disabled for safety. You can still download images."
+      : resolveError || "No media found. Play the post or browse its slides, then click Refresh.");
     return;
   }
 
   const videoCount = media.filter((item) => item.kind === "video").length;
   const imageCount = media.length - videoCount;
   setStatus(instagramVideoDisabled
-    ? `이미지 ${imageCount}개를 찾았습니다. Instagram 영상 다운로드는 비활성화되어 있습니다.`
-    : `영상 ${videoCount}개, 이미지 ${imageCount}개를 찾았습니다.`);
+    ? `Found ${imageCount} image(s). Instagram video downloads are disabled.`
+    : `Found ${videoCount} video(s) and ${imageCount} image(s).`);
   downloadAllButton.disabled = false;
 
   media.forEach((item, index) => {
@@ -66,14 +66,14 @@ function renderMedia() {
     const copy = document.createElement("div");
     copy.className = "media-copy";
     const title = document.createElement("strong");
-    title.textContent = `${item.kind === "video" ? "영상" : "이미지"} ${index + 1}`;
+    title.textContent = `${item.kind === "video" ? "Video" : "Image"} ${index + 1}`;
     const host = document.createElement("small");
-    host.textContent = item.pendingResolution ? "클릭 시 원본 URL 확인" : safeHostname(item.url);
+    host.textContent = item.pendingResolution ? "Resolve source URL on download" : safeHostname(item.url);
     copy.append(title, host);
 
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = "다운로드";
+    button.textContent = "Download";
     button.addEventListener("click", () => downloadItems([item]));
 
     row.append(kind, copy, button);
@@ -85,7 +85,7 @@ async function downloadItems(items) {
   if (!items.length) return;
   const slug = postSlug(activeTab.url);
   const batchTimestamp = timestampSlug();
-  setStatus(`${items.length}개 다운로드를 시작합니다.`);
+  setStatus(`Starting ${items.length} download(s)...`);
 
   let failures = 0;
   for (let index = 0; index < items.length; index += 1) {
@@ -104,8 +104,8 @@ async function downloadItems(items) {
   }
 
   setStatus(failures
-    ? resolveError || `${items.length - failures}개를 시작했고 ${failures}개는 실패했습니다.`
-    : "다운로드를 시작했습니다.");
+    ? resolveError || `Started ${items.length - failures} download(s); ${failures} failed.`
+    : "Downloads started.");
 }
 
 function deduplicate(items) {

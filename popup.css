@@ -26,13 +26,13 @@ header, footer {
 header { border-bottom: 1px solid #292c31; gap: 12px; }
 footer { border-top: 1px solid #292c31; gap: 10px; }
 
-.brand { display: flex; align-items: center; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .logo { flex: none; width: 36px; height: 36px; }
-h1 { margin: 0; font: 700 22px/1.1 Georgia, serif; }
+h1 { margin: 0; font: 700 20px/1.15 Georgia, serif; overflow-wrap: anywhere; }
 #version { display: block; margin-top: 4px; color: #8b9099; font: 400 11px/1 system-ui, sans-serif; }
-#platform { border: 1px solid #444950; border-radius: 999px; padding: 6px 10px; color: #b8bdc5; font-size: 11px; text-transform: uppercase; }
+#platform { flex-shrink: 0; border: 1px solid #444950; border-radius: 999px; padding: 6px 10px; color: #b8bdc5; font-size: 11px; text-transform: uppercase; }
 main { min-height: 290px; padding: 16px 20px; }
-#status { margin: 0 0 14px; color: #aeb3bb; font-size: 13px; line-height: 1.5; }
+#status { margin: 0 0 14px; color: #aeb3bb; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 #media-list { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; }
 
 .media-row {

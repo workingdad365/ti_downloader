@@ -1,29 +1,40 @@
-# TI Downloader
+# Tiktok Instagram Downloader
 
-현재 열린 Instagram 또는 TikTok 게시물에서 감지한 영상과 이미지를 다운로드하는 Manifest V3 Chrome 확장.
+A Manifest V3 Chrome extension for downloading videos and images detected in the Instagram or TikTok post you are viewing.
 
+## Install from source
 
+1. Open `chrome://extensions` in Chrome 116 or later.
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and select this directory.
+4. Reload any Instagram or TikTok tabs that were already open.
 
-<img src="screenshot.jpg" style="width: 30%;" />
+## Usage
 
-## 설치
+1. Open an Instagram post or Reel, or a TikTok video or photo post.
+2. Play the video or browse the carousel slides to help the extension detect available media.
+3. Click the extension icon to view the detected items.
+4. Click **Download** for an individual item or **Download all** for the detected list.
+5. Click **Refresh** to search the current post again.
 
-1. Chrome에서 `chrome://extensions`를 연다.
-2. 우측 상단의 개발자 모드를 켠다.
-3. `압축해제된 확장 프로그램을 로드합니다`를 누른다.
-4. 이 디렉터리를 선택한다.
-5. 기존에 열려 있던 Instagram/TikTok 탭은 한 번 새로고침한다.
+Files are saved through Chrome's download manager. The extension does not require a separate account or API key. Some posts require you to be signed in to the original platform.
 
-## 사용
+## Supported media
 
-1. Instagram 게시물/Reel 또는 TikTok 영상/사진 게시물을 연다.
-2. 영상은 재생하고, 캐러셀은 필요한 항목을 한 번씩 넘기면 감지율이 높아진다.
-3. 확장 아이콘을 눌러 감지된 항목을 개별 또는 일괄 다운로드한다.
+- Instagram progressive MP4 videos, images, and carousel media candidates.
+- TikTok playable MP4 videos and photo-post images.
+- Media discovery from the current page's DOM and network JSON responses.
+- Individual downloads and batch downloads of the detected items.
 
-## 현재 범위
+## Limitations
 
-- Instagram progressive MP4, 이미지, 캐러셀 후보
-- TikTok 재생 MP4 및 사진 게시물 이미지 후보
-- 현재 페이지의 네트워크 JSON과 DOM을 함께 탐색
+- Instagram DASH video/audio merging, HLS streams, and ZIP archives are not supported.
+- Instagram video downloads fetched through the extension are limited to 256 MB.
+- Detection depends on the page layout, available media URLs, and your access to the original post. Not every post or stream can be downloaded.
+- The extension does not bypass login requirements or access restrictions.
 
-Instagram DASH 영상/음성 병합, HLS, ZIP 묶음은 포함하지 않는다.
+Download only content you own or have permission to save. This extension is not affiliated with or endorsed by TikTok, Instagram, Meta, or ByteDance.
+
+## Privacy
+
+See [Privacy Policy](PRIVACY.md) for information about local media processing, network requests, and temporary storage.

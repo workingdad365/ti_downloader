@@ -32,23 +32,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function fetchRemoteVideo(rawUrl) {
   const url = new URL(rawUrl);
   if (url.protocol !== "https:" || !/(^|\.)(cdninstagram\.com|fbcdn\.net)$/.test(url.hostname)) {
-    throw new Error("검증되지 않은 Instagram CDN 주소입니다.");
+    throw new Error("The Instagram CDN URL could not be verified.");
   }
   const response = await fetch(url.href, { credentials: "omit" });
-  if (!response.ok) throw new Error(`Instagram CDN 요청 실패 (${response.status})`);
+  if (!response.ok) throw new Error(`Instagram CDN request failed (${response.status}).`);
   const finalUrl = new URL(response.url);
   if (finalUrl.protocol !== "https:" || !/(^|\.)(cdninstagram\.com|fbcdn\.net)$/.test(finalUrl.hostname)) {
-    throw new Error("Instagram CDN redirect가 허용된 호스트를 벗어났습니다.");
+    throw new Error("The Instagram CDN redirected to a host that is not allowed.");
   }
   const contentType = (response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("video/mp4") && !contentType.includes("application/octet-stream")) {
-    throw new Error(`MP4 응답이 아닙니다 (${contentType || "unknown"})`);
+    throw new Error(`The response is not an MP4 (${contentType || "unknown"}).`);
   }
   const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > MAX_VIDEO_BYTES) throw new Error("Instagram 영상이 256MB 제한을 초과합니다.");
+  if (contentLength > MAX_VIDEO_BYTES) throw new Error("The Instagram video exceeds the 256 MB limit.");
   const bytes = await readResponseWithLimit(response, MAX_VIDEO_BYTES);
-  if (!bytes.byteLength) throw new Error("Instagram 영상이 비어 있습니다.");
-  if (!hasMp4Signature(bytes)) throw new Error("Instagram 응답에 MP4 시그니처가 없습니다.");
+  if (!bytes.byteLength) throw new Error("The Instagram video is empty.");
+  if (!hasMp4Signature(bytes)) throw new Error("The Instagram response does not contain an MP4 signature.");
   const blobUrl = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
   blobRegistry.set(blobUrl, { createdAt: Date.now(), claimedAt: null, downloadId: null });
   return { blobUrl, size: bytes.byteLength, mimeType: "video/mp4" };
@@ -57,7 +57,7 @@ async function fetchRemoteVideo(rawUrl) {
 async function readResponseWithLimit(response, maxBytes) {
   if (!response.body) {
     const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > maxBytes) throw new Error("Instagram 영상이 256MB 제한을 초과합니다.");
+    if (bytes.byteLength > maxBytes) throw new Error("The Instagram video exceeds the 256 MB limit.");
     return bytes;
   }
 
@@ -71,7 +71,7 @@ async function readResponseWithLimit(response, maxBytes) {
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel();
-        throw new Error("Instagram 영상이 256MB 제한을 초과합니다.");
+        throw new Error("The Instagram video exceeds the 256 MB limit.");
       }
       chunks.push(value);
     }

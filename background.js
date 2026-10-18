@@ -60,7 +60,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function downloadMedia(rawUrl, rawFilename) {
   const url = new URL(rawUrl);
   if (url.protocol !== "https:" || !isAllowedHost(url.hostname)) {
-    throw new Error("허용되지 않은 미디어 주소입니다.");
+    throw new Error("This media URL is not allowed.");
   }
 
   const filename = sanitizeFilename(rawFilename || "media");
@@ -75,7 +75,7 @@ async function downloadMedia(rawUrl, rawFilename) {
 
 async function downloadBlob(rawUrl, rawFilename) {
   const url = new URL(rawUrl);
-  if (url.protocol !== "blob:") throw new Error("올바르지 않은 Blob 주소입니다.");
+  if (url.protocol !== "blob:") throw new Error("Invalid Blob URL.");
   const filename = sanitizeFilename(rawFilename || "media");
   return chrome.downloads.download({
     url: url.href,
@@ -88,7 +88,7 @@ async function downloadBlob(rawUrl, rawFilename) {
 async function downloadInstagramProgressive(rawUrl, rawFilename) {
   const url = new URL(rawUrl);
   if (url.protocol !== "https:" || !/(^|\.)(cdninstagram\.com|fbcdn\.net)$/.test(url.hostname)) {
-    throw new Error("검증되지 않은 Instagram 영상 주소입니다.");
+    throw new Error("The Instagram video URL could not be verified.");
   }
 
   await ensureOffscreenDocument();
@@ -97,7 +97,7 @@ async function downloadInstagramProgressive(rawUrl, rawFilename) {
     type: "FETCH_REMOTE_VIDEO",
     url: url.href
   });
-  if (!result?.ok || !result.blobUrl) throw new Error(result?.error || "영상 fetch 실패");
+  if (!result?.ok || !result.blobUrl) throw new Error(result?.error || "Failed to fetch the video.");
 
   const filename = sanitizeFilename(rawFilename || "instagram-video.mp4");
   let downloadId;

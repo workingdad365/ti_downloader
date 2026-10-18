@@ -403,14 +403,14 @@ async function downloadMedia(item, filename) {
     const resolved = item.verified === true && isAllowedInstagramVideoUrl(item.url)
       ? { url: item.url, mediaId: item.mediaId }
       : await resolveInstagramProgressiveVideoCached(permalink);
-    if (!resolved?.url) throw new Error("현재 Instagram 영상의 원본 URL을 확인하지 못했습니다.");
+    if (!resolved?.url) throw new Error("Could not resolve the source URL of the current Instagram video.");
     return chrome.runtime.sendMessage({
       type: "DOWNLOAD_INSTAGRAM_PROGRESSIVE",
       url: resolved.url,
       filename
     });
   }
-  if (!item?.url || !isSafeMedia(item)) throw new Error("유효한 미디어 주소가 없습니다.");
+  if (!item?.url || !isSafeMedia(item)) throw new Error("No valid media URL is available.");
   if (item.kind !== "video") {
     return chrome.runtime.sendMessage({
       type: "DOWNLOAD_MEDIA",
@@ -424,14 +424,14 @@ async function downloadMedia(item, filename) {
     cache: "no-store",
     headers: { Accept: "video/mp4,video/*;q=0.9,*/*;q=0.1" }
   });
-  if (!response.ok) throw new Error(`영상 요청 실패 (${response.status})`);
+  if (!response.ok) throw new Error(`Video request failed (${response.status}).`);
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("video") && !contentType.toLowerCase().includes("octet-stream")) {
-    throw new Error(`응답이 영상이 아닙니다 (${contentType || "unknown"})`);
+    throw new Error(`The response is not a video (${contentType || "unknown"}).`);
   }
 
   const blob = await response.blob();
-  if (blob.size === 0) throw new Error("빈 영상 파일입니다.");
+  if (blob.size === 0) throw new Error("The video file is empty.");
   const blobUrl = URL.createObjectURL(blob);
   try {
     const result = await chrome.runtime.sendMessage({
@@ -462,7 +462,7 @@ async function resolveInstagramProgressiveVideoCached(permalink) {
 
 async function resolveInstagramProgressiveVideo(permalink) {
   const shortcode = new URL(permalink).pathname.match(/\/(?:reel|reels|p|tv)\/([A-Za-z0-9_-]+)/i)?.[1];
-  if (!shortcode) throw new Error("Instagram 게시물 shortcode를 찾지 못했습니다.");
+  if (!shortcode) throw new Error("Could not find the Instagram post shortcode.");
 
   const response = await fetch(permalink, {
     credentials: "include",
@@ -474,13 +474,13 @@ async function resolveInstagramProgressiveVideo(permalink) {
       Pragma: "no-cache"
     }
   });
-  if (!response.ok) throw new Error(`Instagram 게시물 요청 실패 (${response.status})`);
+  if (!response.ok) throw new Error(`Instagram post request failed (${response.status}).`);
   const html = await response.text();
   const parsed = extractInstagramMediaFromHtml(html, shortcode);
   if (parsed?.url) return parsed;
-  if (!parsed?.mediaId) throw new Error("게시물 JSON에서 video_versions 또는 media ID를 찾지 못했습니다.");
+  if (!parsed?.mediaId) throw new Error("Could not find video_versions or a media ID in the post JSON.");
   const apiResult = await fetchInstagramMediaInfo(parsed.mediaId, shortcode);
-  if (!apiResult?.url) throw new Error("Instagram Media Info API에서 progressive MP4를 찾지 못했습니다.");
+  if (!apiResult?.url) throw new Error("Could not find a progressive MP4 in the Instagram Media Info API response.");
   return apiResult;
 }
 

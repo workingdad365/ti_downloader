@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "TI Downloader",
-  "version": "1.0.4",
+  "name": "Tiktok Instagram Downloader",
+  "version": "1.0.5",
   "minimum_chrome_version": "116",
   "description": "Download media from the current Instagram or TikTok post.",
   "icons": {
@@ -29,7 +29,7 @@
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
     },
-    "default_title": "TI Downloader",
+    "default_title": "Tiktok Instagram Downloader",
     "default_popup": "popup.html"
   },
   "background": {
