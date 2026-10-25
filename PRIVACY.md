@@ -14,13 +14,13 @@ To provide this feature, the extension processes the current post URL, media URL
 
 The extension requests post details and media from Instagram, TikTok, and their media delivery hosts. Requests made in the page may use your existing platform session. For Instagram media information requests, the extension reads the page's CSRF token and includes it in a request to Instagram. It does not ask you to provide your password or an API key.
 
-Instagram MP4 downloads are fetched in the extension's save window without cookies. The extension verifies the allowed media host, response format, MP4 signature, and size limit while streaming the file. TikTok videos are fetched in the original page context and transferred in bounded chunks to the save window.
+Instagram MP4 downloads are fetched by the extension's background service worker without cookies. The extension verifies the allowed media host, response format, MP4 signature, and size limit while streaming the file. TikTok videos are fetched in the original page context and transferred in bounded chunks to the background service worker.
 
 The original platforms and their delivery providers receive normal request information, such as your IP address and the requested resource. Their own privacy policies apply to those requests. The extension does not send this information to a separate developer-operated server.
 
 ## Local storage and downloaded files
 
-Detected media information, post URLs, and pending download requests are cached in `chrome.storage.session` for the browser session. Media buffers are held temporarily in browser memory. The selected folder's `FileSystemDirectoryHandle` is stored in the extension's IndexedDB to reuse that folder after reopening the window or restarting Chrome. Folder access is checked before saving, and you can change the folder in the extension.
+Detected media information, post URLs, pending first-time download requests, and the latest download status are cached in `chrome.storage.session` for the browser session. Media buffers are held temporarily in browser memory. The selected folder's `FileSystemDirectoryHandle` is stored in the extension's IndexedDB to reuse that folder after reopening the extension or restarting Chrome. Folder access is checked before background saving, and you can change the folder from the extension popup.
 
 Downloaded files remain in your chosen folder until you delete them and are not added to Chrome's download history. Removing the extension clears its remembered folder setting but does not delete downloaded files. Restarting the browser clears the extension's session storage.
 

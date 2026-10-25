@@ -391,9 +391,11 @@ async function downloadFromOverlay(event, button) {
     const extension = item.kind === "video" ? "mp4" : imageExtension(item.url);
     const filename = `ti_downloader-${downloadSlug()}-${timestampSlug()}.${extension}`;
     const response = await chrome.runtime.sendMessage({
-      type: "OPEN_DOWNLOAD_WINDOW", items: [{ item, filename }]
+      type: "START_DOWNLOAD", items: [{ item, filename }]
     });
-    showButtonResult(button, response?.ok, response?.ok ? "Save window opened" : response?.error || "Download failed");
+    showButtonResult(button, response?.ok, response?.ok
+      ? response.state === "needs-folder" ? "Choose a download folder" : "Download started"
+      : response?.error || "Download failed");
   } catch (error) {
     showButtonResult(button, false, error.message);
   }
@@ -606,7 +608,7 @@ function setOverlayButtonState(button, state, label) {
   const accessibleLabel = label || {
     download: "Download",
     loading: "Finding media",
-    success: "Save window opened",
+    success: "Download started",
     error: "Download failed"
   }[state];
   button.setAttribute("aria-label", accessibleLabel);

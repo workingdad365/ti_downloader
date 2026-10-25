@@ -79,7 +79,13 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 footer button { white-space: nowrap; }
 body.download-window { width: 100%; min-width: 360px; min-height: 0; }
 .download-window main { min-height: 180px; }
-.folder-settings { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-#folder { flex: 1; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
-.folder-settings button { flex-shrink: 0; }
+body.folder-window { width: min(100%, 520px); min-height: 0; margin: 40px auto; }
+.folder-window main { min-height: 140px; }
+.download-folder { padding: 16px 20px; border-bottom: 1px solid #292c31; }
+#folder-name { margin: 0 0 10px; font-size: 13px; overflow-wrap: anywhere; }
+.download-folder button { width: 100%; }
+#folder-status { margin: 8px 0 0; color: #aeb3bb; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+#folder-status:empty { display: none; }
+#download-progress { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #292c31; }
+#download-status { margin: 0 0 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .save-help { font-size: 12px; color: #8b9099; line-height: 1.5; }

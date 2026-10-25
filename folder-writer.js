@@ -45,7 +45,7 @@
       }
       return [...parts.slice(0, -1), name].join("/");
     };
-    // Serialize filename allocation across this extension's save windows.
+    // Serialize filename allocation across this extension's downloads.
     return globalThis.navigator?.locks
       ? navigator.locks.request("folder-writer", { signal }, save)
       : save();

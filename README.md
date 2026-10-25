@@ -13,16 +13,16 @@ A Manifest V3 Chrome extension for downloading videos and images detected in the
 
 1. Open an Instagram post or Reel, or a TikTok video or photo post.
 2. Play the video or browse the carousel slides to help the extension detect available media.
-3. Click the extension icon to view the detected items.
-4. Click **Download** for an individual item or **Download all** for the detected list.
-5. On the first download, click **Choose folder and save** in the save window. The folder is remembered across windows and browser restarts.
-6. Future downloads start automatically when the remembered folder is accessible. If access needs to be renewed, click **Save** to allow it.
-7. Use **Save folder** in the popup or **Change folder** in the save window to choose another location. Keep the save window and source tab open until saving finishes.
+3. Click the extension icon and use **Set download folder** to open the folder settings tab. Click **Choose download folder** there to select a location. The folder is remembered across browser restarts. Use **Change download folder** in the extension popup to change it later.
+4. Click **Download** for an individual item, **Download all** for the detected list, or the download button over the media.
+5. If no folder has ever been selected, a one-time setup window opens. Click **Choose folder and download**; the window closes after the folder is remembered and the download starts in the background.
+6. Once a folder is set, downloads run in the background without opening a save window. Keep the source tab open until saving finishes. The extension popup shows progress, results, and a **Stop downloads** button.
+7. If folder access expires or the folder is deleted, use **Change download folder** in the extension popup to select it again or choose another location. This does not open the initial setup window.
 8. Click **Refresh** to search the current post again.
 
-Files are written directly to the chosen folder using the File System Access API. Other extensions cannot rename these downloads, and the files do not appear in Chrome's download list. Existing files are preserved by adding a numeric suffix. The save window reports completed writes and provides a **Stop** button. The media overlay button opens the same save window.
+Files are written directly to the chosen folder using the File System Access API. Other extensions cannot rename these downloads, and the files do not appear in Chrome's download list. Existing files are preserved by adding a numeric suffix. Downloads continue after the extension popup is closed. A `!` badge on the extension icon indicates an error; open the popup to see the result.
 
-The extension does not require a separate account or API key. Some posts require you to be signed in to the original platform. Chrome may request folder access again if permission expires; a deleted folder must be selected again.
+The extension does not require a separate account or API key. Some posts require you to be signed in to the original platform.
 
 ## Supported media
 

@@ -34,16 +34,26 @@
       <span id="platform">...</span>
     </header>
 
+    <section class="download-folder" aria-label="Download folder">
+      <p id="folder-name">Loading download folder...</p>
+      <button id="choose-folder" type="button" disabled>Set download folder</button>
+      <p id="folder-status" role="status"></p>
+    </section>
+
     <main>
+      <div id="download-progress" hidden>
+        <p id="download-status" role="status"></p>
+        <button id="stop-downloads" type="button" hidden>Stop downloads</button>
+      </div>
       <p id="status">Looking for media in the current post...</p>
       <div id="media-list" aria-live="polite"></div>
     </main>
 
     <footer>
       <button id="refresh" type="button">Refresh</button>
-      <button id="choose-folder" type="button">Save folder</button>
       <button id="download-all" class="primary" type="button" disabled>Download all</button>
     </footer>
+    <script src="folder-store.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

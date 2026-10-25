@@ -5,6 +5,11 @@ const refreshButton = document.querySelector("#refresh");
 const downloadAllButton = document.querySelector("#download-all");
 const versionElement = document.querySelector("#version");
 const folderButton = document.querySelector("#choose-folder");
+const folderNameElement = document.querySelector("#folder-name");
+const folderStatusElement = document.querySelector("#folder-status");
+const downloadProgressElement = document.querySelector("#download-progress");
+const downloadStatusElement = document.querySelector("#download-status");
+const stopDownloadsButton = document.querySelector("#stop-downloads");
 
 versionElement.textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -12,11 +17,66 @@ let activeTab;
 let media = [];
 let instagramVideoDisabled = false;
 let resolveError = "";
+let directory = null;
 
 refreshButton.addEventListener("click", loadMedia);
 downloadAllButton.addEventListener("click", () => downloadItems(media));
-folderButton.addEventListener("click", () => openSaveWindow([]));
+folderButton.addEventListener("click", chooseDownloadFolder);
+stopDownloadsButton.addEventListener("click", async () => {
+  stopDownloadsButton.disabled = true;
+  await chrome.runtime.sendMessage({ type: "STOP_DOWNLOADS" }).catch((error) => {
+    downloadStatusElement.textContent = error.message;
+    stopDownloadsButton.disabled = false;
+  });
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "session" && changes["download-status"]) renderDownloadStatus(changes["download-status"].newValue);
+});
+loadFolder();
+chrome.runtime.sendMessage({ type: "GET_DOWNLOAD_STATUS" })
+  .then((response) => { if (response?.ok) renderDownloadStatus(response.status); })
+  .catch(() => {});
 loadMedia();
+
+function renderFolder() {
+  folderNameElement.textContent = directory ? `Download folder: ${directory.name}` : "Download folder: not set";
+  folderButton.textContent = directory ? "Change download folder" : "Set download folder";
+}
+
+async function loadFolder() {
+  try {
+    directory = await FolderStore.load();
+    renderFolder();
+    if (directory && !await FolderStore.canReuse(directory, { interactive: false })) {
+      folderStatusElement.textContent = "Folder access is required. Select this folder again or choose another folder.";
+    }
+  } catch (error) {
+    folderStatusElement.textContent = error.message;
+  } finally {
+    folderButton.disabled = false;
+  }
+}
+
+async function chooseDownloadFolder() {
+  folderButton.disabled = true;
+  try {
+    await chrome.runtime.openOptionsPage();
+  } catch (error) {
+    folderStatusElement.textContent = error.message;
+  } finally {
+    folderButton.disabled = false;
+  }
+}
+
+function renderDownloadStatus(status) {
+  downloadProgressElement.hidden = !status;
+  downloadStatusElement.textContent = status?.message || "";
+  if (status?.active > 0 && status.state !== "saving") {
+    downloadStatusElement.textContent += ` ${status.active} download(s) still in progress.`;
+  }
+  stopDownloadsButton.hidden = !(status?.active > 0 || status?.state === "saving");
+  stopDownloadsButton.disabled = false;
+}
 
 async function loadMedia() {
   setStatus("Looking for media in the current post...");
@@ -92,20 +152,22 @@ async function downloadItems(items) {
     const filename = `ti_downloader-${slug}-${batchTimestamp}-${String(index + 1).padStart(2, "0")}.${extension}`;
     return { item, filename };
   });
-  await openSaveWindow(downloads);
+  await startDownload(downloads);
 }
 
-async function openSaveWindow(items) {
-  document.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+async function startDownload(items) {
+  const buttons = [refreshButton, downloadAllButton, ...listElement.querySelectorAll("button")];
+  buttons.forEach((button) => { button.disabled = true; });
   try {
     const response = await chrome.runtime.sendMessage({
-      type: "OPEN_DOWNLOAD_WINDOW", tabId: activeTab?.id, items
+      type: "START_DOWNLOAD", tabId: activeTab?.id, items
     });
-    if (!response?.ok) throw new Error(response?.error || "Could not open the save window.");
-    window.close();
+    if (!response?.ok) throw new Error(response?.error || "Could not start the download.");
+    if (response.state === "needs-folder") window.close();
   } catch (error) {
     setStatus(error.message);
-    document.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+  } finally {
+    buttons.forEach((button) => { button.disabled = false; });
     downloadAllButton.disabled = !media.length;
   }
 }

@@ -11,7 +11,7 @@
 
   async function open(tabId, item, { signal } = {}) {
     signal?.throwIfAborted();
-    const media = await chrome.tabs.sendMessage(tabId, { type: "PREPARE_PAGE_MEDIA", item });
+    const media = await prepareMedia(tabId, item, signal);
     signal?.throwIfAborted();
     if (!media?.ok) throw new Error(media?.error || "Could not prepare the media. Reload the source page.");
     if (!["instagram-video", "page-video", "image"].includes(media.source)) throw new Error("Unsupported media source.");
@@ -35,6 +35,20 @@
     } catch (error) {
       await response.body?.cancel().catch(() => {});
       throw error;
+    }
+  }
+
+  async function prepareMedia(tabId, item, signal) {
+    const response = chrome.tabs.sendMessage(tabId, { type: "PREPARE_PAGE_MEDIA", item });
+    if (!signal) return response;
+    let onAbort;
+    try {
+      return await Promise.race([response, new Promise((_, reject) => {
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener("abort", onAbort, { once: true });
+      })]);
+    } finally {
+      signal.removeEventListener("abort", onAbort);
     }
   }
 

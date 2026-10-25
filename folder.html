@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TI Downloader - Download folder</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body class="folder-window">
+    <header><h1>Download folder <span id="version"></span></h1></header>
+    <main>
+      <p id="folder-name">Loading download folder...</p>
+      <p id="status" role="status">Checking folder access...</p>
+      <p class="save-help">Downloads will be saved to this folder automatically. You can close this tab after choosing a folder.</p>
+    </main>
+    <footer>
+      <button id="choose-folder" class="primary" type="button" disabled>Choose download folder</button>
+      <button id="close" type="button">Close</button>
+    </footer>
+    <script src="folder-store.js"></script>
+    <script src="folder.js"></script>
+  </body>
+</html>

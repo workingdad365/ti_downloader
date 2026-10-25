@@ -90,16 +90,72 @@ function directory({ name = "Saved media", permission = "granted", granted = "gr
   return handle;
 }
 
-function element() {
+function element(tagName = "") {
   const listeners = new Map();
   return {
-    textContent: "", disabled: false, hidden: false, children: [],
+    tagName: tagName.toUpperCase(), textContent: "", disabled: false, hidden: false, children: [],
     addEventListener(name, fn) { listeners.set(name, fn); },
     click() { if (!this.disabled) return listeners.get("click")?.(); },
     append(...nodes) { this.children.push(...nodes); },
     replaceChildren(...nodes) { this.children = nodes; },
+    querySelectorAll(selector) {
+      return this.children.flatMap((child) => [
+        ...(child.tagName === selector.toUpperCase() ? [child] : []),
+        ...(child.querySelectorAll?.(selector) || [])
+      ]);
+    },
     setAttribute(name, value) { this[name] = value; }
   };
 }
 
-module.exports = { source, tick, event, ports, content, directory, element };
+function background({ storage = {}, session = {}, failWindow = false, loadError = false,
+  open = async () => new Response(Uint8Array.of(0, 255, 128)).body } = {}) {
+  const onMessage = event();
+  const windows = [];
+  const requests = [];
+  const intervals = new Map();
+  const timeouts = new Map();
+  let timerId = 0;
+  let badge = "";
+  let keepAliveCalls = 0;
+  const context = vm.createContext({
+    URL, Uint8Array, AbortController, DOMException, ReadableStream, TransformStream, atob,
+    crypto: require("node:crypto").webcrypto,
+    setInterval(fn, delay) { const id = ++timerId; intervals.set(id, { fn, delay }); return id; },
+    clearInterval(id) { intervals.delete(id); },
+    setTimeout(fn, delay) { const id = ++timerId; timeouts.set(id, { fn, delay }); return id; },
+    clearTimeout(id) { timeouts.delete(id); },
+    importScripts(...files) {
+      for (const file of files) vm.runInContext(source(file), context);
+      context.FolderStore.load = async () => {
+        if (loadError) throw new Error("Folder settings unavailable");
+        return storage.directory || null;
+      };
+      context.MediaReader.open = async (tabId, item, options) => {
+        requests.push({ tabId, item, ...options });
+        return open(item, options, requests.length);
+      };
+    },
+    chrome: {
+      runtime: { onMessage, getURL: (url) => `chrome-extension://test/${url}`,
+        async getPlatformInfo() { keepAliveCalls += 1; return {}; } },
+      storage: { session: {
+        async set(values) { Object.assign(session, values); },
+        async get(key) { return { [key]: session[key] }; },
+        async remove(key) { delete session[key]; }
+      } },
+      action: {
+        async setBadgeText({ text }) { badge = text; },
+        async setBadgeBackgroundColor() {}, async setTitle() {}
+      },
+      windows: { async create(options) { if (failWindow) throw new Error("Window failed"); windows.push(options); return { id: windows.length }; } }
+    }
+  });
+  vm.runInContext(source("background.js"), context);
+  return { context, stored: session, storage, windows, requests, intervals, timeouts,
+    badge: () => badge, keepAliveCalls: () => keepAliveCalls,
+    status: () => session["download-status"],
+    message: (message, sender = {}) => new Promise((resolve) => onMessage.emit(message, sender, resolve)) };
+}
+
+module.exports = { source, tick, event, ports, content, directory, element, background };

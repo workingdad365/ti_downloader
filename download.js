@@ -1,135 +1,62 @@
-const startButton = document.querySelector("#start");
-const stopButton = document.querySelector("#stop");
-const folderButton = document.querySelector("#choose-folder");
-const folderElement = document.querySelector("#folder");
+const chooseButton = document.querySelector("#choose-folder");
+const closeButton = document.querySelector("#close");
 const statusElement = document.querySelector("#status");
 document.querySelector("#version").textContent = `v${chrome.runtime.getManifest().version}`;
 
-let directory = null;
-let job = null;
-let running = false;
-let controller = null;
-let nextItem = 0;
-let saved = 0;
-let failed = 0;
+let job;
+let key;
+let choosing = false;
 let closed = false;
-let lastFailure = "";
 
-function renderFolder() {
-  folderElement.textContent = directory ? `Save folder: ${directory.name}` : "Choose a folder once. Future downloads will reuse it.";
-  folderButton.textContent = directory ? "Change folder" : "Choose folder";
-  startButton.textContent = directory ? "Save" : "Choose folder and save";
+async function startDownload() {
+  const response = await chrome.runtime.sendMessage({ type: "START_DOWNLOAD", tabId: job.tabId, items: job.items });
+  if (!response?.ok) throw new Error(response?.error || "Could not start the download. Open TI Downloader to try again.");
+  await chrome.storage.session.remove(key);
 }
 
-function setBusy(busy) {
-  running = busy;
-  folderButton.disabled = busy;
-  startButton.disabled = busy || !job?.items.length || nextItem >= job.items.length;
-  stopButton.hidden = !busy;
-  stopButton.disabled = false;
-}
-
-async function chooseDirectory() {
-  if (!window.showDirectoryPicker) throw new Error("Chrome with direct folder saving support is required.");
-  const selected = await window.showDirectoryPicker({ id: "ti-downloader", mode: "readwrite", startIn: "downloads" });
-  await FolderStore.save(selected);
-  directory = selected;
-  renderFolder();
-}
-
-function showError(error) {
-  statusElement.textContent = error.name === "AbortError" ? "Cancelled. No further files were saved." : error.message;
-}
-
-function sanitizeFilename(filename) {
-  return String(filename || "media").replace(/[<>:"|?*\\/\x00-\x1f]/g, "_")
-    .replace(/\.{2,}/g, ".").replace(/^[._]+/, "").slice(0, 180) || "media";
-}
-
-async function saveItems(interactive = true) {
-  if (closed || running || !job?.items.length || nextItem >= job.items.length) return;
-  setBusy(true);
-  controller = new AbortController();
-  const signal = controller.signal;
+chooseButton.addEventListener("click", async () => {
+  if (choosing || closed || !job) return;
+  choosing = true;
+  chooseButton.disabled = true;
+  let remembered = false;
   try {
-    const reusable = await FolderStore.canReuse(directory, { interactive });
-    signal.throwIfAborted();
-    if (!reusable) {
-      if (!interactive) {
-        statusElement.textContent = directory ? "Click Save to confirm folder access or choose a new folder." : "Choose a save folder to start. It will be remembered.";
-        return;
-      }
-      await chooseDirectory();
-    }
-    for (; nextItem < job.items.length; nextItem += 1) {
-      signal.throwIfAborted();
-      const { item, filename } = job.items[nextItem];
-      statusElement.textContent = `Saving ${nextItem + 1} of ${job.items.length}...`;
-      let source;
-      let writing = false;
-      try {
-        source = await MediaReader.open(job.tabId, item, { signal });
-        signal.throwIfAborted();
-        writing = true;
-        await FolderWriter.write(directory, sanitizeFilename(filename), source, { signal });
-        saved += 1;
-      } catch (error) {
-        if (signal.aborted || writing) throw error;
-        failed += 1;
-        lastFailure = error.message;
-        statusElement.textContent = error.message;
-      } finally {
-        await source?.cancel().catch(() => {});
-      }
-    }
-    statusElement.textContent = `Saved ${saved} file(s) to ${directory.name}.${failed ? ` ${failed} failed: ${lastFailure}` : ""}`;
+    const directory = await window.showDirectoryPicker({ id: "ti-downloader", mode: "readwrite", startIn: "downloads" });
+    await FolderStore.save(directory);
+    remembered = true;
+    if (!closed) await startDownload();
   } catch (error) {
-    showError(error);
+    statusElement.textContent = error.name === "AbortError"
+      ? "No folder selected. Choose a download folder to continue."
+      : error.message;
   } finally {
-    controller = null;
-    setBusy(false);
-  }
-}
-
-startButton.addEventListener("click", () => saveItems());
-stopButton.addEventListener("click", () => {
-  controller?.abort();
-  stopButton.disabled = true;
-});
-folderButton.addEventListener("click", async () => {
-  if (running) return;
-  setBusy(true);
-  stopButton.hidden = true;
-  try {
-    await chooseDirectory();
-    statusElement.textContent = "Save folder remembered.";
-  } catch (error) {
-    showError(error);
-  } finally {
-    setBusy(false);
+    choosing = false;
+    chooseButton.disabled = !job;
+    if (remembered && !closed) window.close();
   }
 });
+closeButton.addEventListener("click", () => window.close());
 window.addEventListener("pagehide", () => {
   closed = true;
-  controller?.abort();
+  if (key && !choosing) chrome.storage.session.remove(key).catch(() => {});
 });
 
 async function init() {
-  const key = new URLSearchParams(location.search).get("job");
-  if (!key?.startsWith("download:")) throw new Error("Open the save window from TI Downloader.");
+  key = new URLSearchParams(location.search).get("job");
+  if (!key?.startsWith("download:")) throw new Error("Start a download from TI Downloader.");
   const stored = await chrome.storage.session.get(key);
   job = stored[key];
-  if (!job || !Array.isArray(job.items)) throw new Error("The download request has expired. Start again from the source page.");
-  await chrome.storage.session.remove(key);
-  directory = await FolderStore.load();
-  renderFolder();
-  startButton.hidden = !job.items.length;
-  setBusy(false);
-  if (job.items.length) await saveItems(false);
-  else statusElement.textContent = "Choose the folder to use for future downloads.";
+  if (!job || !Array.isArray(job.items) || !job.items.length) {
+    job = null;
+    throw new Error("The download request has expired. Start again from the source page.");
+  }
+  const directory = await FolderStore.load();
+  if (closed) return;
+  if (directory) {
+    try { await startDownload(); } finally { window.close(); }
+    return;
+  }
+  statusElement.textContent = "Choose a download folder once. Future downloads will save there without opening this window.";
+  chooseButton.disabled = false;
 }
 
-init().catch((error) => {
-  showError(error);
-  folderButton.disabled = false;
-});
+init().catch((error) => { statusElement.textContent = error.message; });

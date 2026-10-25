@@ -54,6 +54,25 @@ test("이미지는 선택한 URL의 응답을 스트림으로 반환", async () 
   assert.deepEqual(new Uint8Array(await new Response(await fixture.open(7, image)).arrayBuffer()), bytes);
 });
 
+test("페이지 준비 응답이 없어도 중지와 시간 초과는 즉시 미디어 취득 종료", async () => {
+  for (const reason of [new DOMException("Stopped", "AbortError"), new Error("The media request timed out.")]) {
+    let respond;
+    let fetches = 0;
+    const fixture = reader({
+      page: { message: () => new Promise((resolve) => { respond = resolve; }) },
+      fetch: async () => { fetches += 1; return response(mp4); }
+    });
+    const controller = new AbortController();
+    const opening = fixture.open(7, instagramVideo, { signal: controller.signal });
+    const rejected = assert.rejects(opening, (error) => error === reason);
+    controller.abort(reason);
+    await rejected;
+    respond({ ok: true, source: "instagram-video", url: instagramVideo.url });
+    await tick();
+    assert.equal(fetches, 0);
+  }
+});
+
 test("Instagram HTTP 오류, 잘못된 형식, 호스트, 빈 응답과 용량 초과 거절", async () => {
   const cases = [
     [() => response(mp4, { status: 403 }), /403/],

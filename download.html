@@ -3,26 +3,20 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TI Downloader - Save media</title>
+    <title>TI Downloader - Choose download folder</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body class="download-window">
-    <header><h1>Save media <span id="version"></span></h1></header>
+    <header><h1>Choose download folder <span id="version"></span></h1></header>
     <main>
-      <div class="folder-settings">
-        <p id="folder">Loading save folder...</p>
-        <button id="choose-folder" type="button" disabled>Choose folder</button>
-      </div>
-      <p id="status" role="status">Preparing download...</p>
-      <p class="save-help">Keep this window and the source tab open until saving finishes. Files are saved directly to your folder.</p>
+      <p id="status" role="status">Checking the download folder...</p>
+      <p class="save-help">You can change the download folder later from the TI Downloader popup.</p>
     </main>
     <footer>
-      <button id="start" class="primary" type="button" disabled>Choose folder and save</button>
-      <button id="stop" type="button" hidden>Stop</button>
+      <button id="choose-folder" class="primary" type="button" disabled>Choose folder and download</button>
+      <button id="close" type="button">Cancel</button>
     </footer>
     <script src="folder-store.js"></script>
-    <script src="folder-writer.js"></script>
-    <script src="media-reader.js"></script>
     <script src="download.js"></script>
   </body>
 </html>
