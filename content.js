@@ -1,10 +1,18 @@
 const mediaByUrl = new Map();
 let cachedPageUrl = location.href;
 let overlayRefreshTimer;
+let overlayPositionFrame;
 let overlayHost;
 let overlayButton;
 let instagramResolveCache;
 let lastInstagramResolveError = "";
+const profilePostIds = new Set();
+const profileOverlays = new Map();
+let profileCards = [];
+const profileResolveCache = new Map();
+let profileLimitReached = false;
+let profileScanPending = false;
+let lastProfileScan = 0;
 
 const OVERLAY_ICONS = {
   download: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/></svg>',
@@ -17,9 +25,16 @@ window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== location.origin) return;
   if (event.data?.source !== "ti_downloader_page" || event.data?.type !== "MEDIA_FOUND") return;
   mergeMedia(event.data.media, event.data.pageUrl);
+  if (ProfileMedia.profile(location.href)) scheduleOverlayRefresh();
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "RESOLVE_PROFILE_POST") {
+    resolveProfilePost(message.item)
+      .then((items) => sendResponse({ ok: true, items }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === "PREPARE_PAGE_MEDIA") {
     prepareMedia(message.item)
       .then((media) => sendResponse({ ok: true, ...media }))
@@ -36,9 +51,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       instagramVideoDisabled: false,
       resolveError: lastInstagramResolveError,
       pageUrl: location.href,
+      profile: Boolean(ProfileMedia.profile(location.href)),
+      limitReached: profileLimitReached,
       media: mediaForUi()
     });
-  });
+  }).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });
 
@@ -48,16 +65,26 @@ new MutationObserver(scheduleOverlayRefresh).observe(document.documentElement, {
   childList: true,
   subtree: true,
   attributes: true,
-  attributeFilter: ["src", "poster"]
+  attributeFilter: ["src", "poster", "href"]
 });
-window.addEventListener("scroll", scheduleOverlayRefresh, true);
-window.addEventListener("resize", scheduleOverlayRefresh);
+window.addEventListener("scroll", scheduleOverlayPositionRefresh, { capture: true, passive: true });
+window.addEventListener("resize", scheduleOverlayPositionRefresh);
+window.addEventListener("popstate", scheduleOverlayRefresh);
 setTimeout(() => {
   refreshMedia().finally(refreshDownloadOverlays);
 }, 500);
 
 async function refreshMedia() {
+  syncMediaPage();
+  const pageUrl = location.href;
   const runtimeMedia = await requestRuntimeMedia();
+  if (pageUrl !== location.href) return;
+  if (ProfileMedia.profile(pageUrl)) {
+    mergeMedia(runtimeMedia, pageUrl);
+    collectFromDom();
+    refreshDownloadOverlays();
+    return;
+  }
   if (location.hostname.endsWith("tiktok.com")) {
     replaceTikTokMedia(runtimeMedia);
   } else {
@@ -81,6 +108,10 @@ async function refreshMedia() {
 }
 
 function mediaForUi() {
+  if (ProfileMedia.profile(location.href)) {
+    collectFromDom();
+    return ProfileMedia.posts(rankedMedia());
+  }
   const media = rankedMedia();
   if (!location.hostname.endsWith("instagram.com")) return media;
   if (media.some((item) => item.kind === "video") || !hasVisibleInstagramVideo()) return media;
@@ -119,12 +150,31 @@ async function restoreCachedMedia() {
 
 function mergeMedia(media, pageUrl, persist = true) {
   if (pageUrl && normalizePostUrl(pageUrl) !== normalizePostUrl(location.href)) return;
-  if (cachedPageUrl !== location.href) {
-    mediaByUrl.clear();
-    cachedPageUrl = location.href;
-  }
+  syncMediaPage();
 
   const incoming = Array.isArray(media) ? media : [];
+  const profile = ProfileMedia.profile(location.href);
+  if (profile) {
+    for (const item of incoming) {
+      if (!item) continue;
+      const post = ProfileMedia.post(item.permalink, location.href);
+      if (!post || post.postId !== item.postId || !["post", "video", "image"].includes(item.kind)) continue;
+      if (item.pendingResolution ? ProfileMedia.post(item.url, location.href)?.postId !== post.postId : !isSafeMedia(item)) continue;
+      if (item.ownerUsername?.toLowerCase() === profile.username.toLowerCase()) profilePostIds.add(item.postId);
+      const key = ProfileMedia.key(item);
+      if (ProfileMedia.prefer(item, mediaByUrl.get(key))) mediaByUrl.set(key, item);
+    }
+    const postIds = new Set([...mediaByUrl.values()].map((item) => item.postId));
+    while (postIds.size > 500) {
+      const oldest = postIds.values().next().value;
+      for (const [key, item] of mediaByUrl) if (item.postId === oldest) mediaByUrl.delete(key);
+      postIds.delete(oldest);
+      profilePostIds.delete(oldest);
+      profileLimitReached = true;
+    }
+    if (persist) cacheMedia();
+    return;
+  }
   if (location.hostname.endsWith("tiktok.com") && incoming.some((item) => item?.kind === "video")) {
     for (const [url, item] of mediaByUrl) {
       if (item.kind === "image" || isTikTokPageUrl(item.url)) mediaByUrl.delete(url);
@@ -142,15 +192,40 @@ function mergeMedia(media, pageUrl, persist = true) {
     }
   }
 
-  if (persist) {
-    chrome.runtime.sendMessage({
-      type: "CACHE_MEDIA",
-      payload: { pageUrl: location.href, media: rankedMedia().slice(0, 60) }
-    }).catch(() => {});
-  }
+  if (persist) cacheMedia();
+}
+
+function syncMediaPage() {
+  if (cachedPageUrl === location.href) return;
+  mediaByUrl.clear();
+  profilePostIds.clear();
+  profileResolveCache.clear();
+  if (overlayHost) overlayHost.style.display = "none";
+  for (const { host } of profileOverlays.values()) host.remove();
+  profileOverlays.clear();
+  profileCards = [];
+  profileLimitReached = false;
+  lastProfileScan = 0;
+  instagramResolveCache = undefined;
+  lastInstagramResolveError = "";
+  cachedPageUrl = location.href;
+}
+
+function cacheMedia() {
+  chrome.runtime.sendMessage({
+    type: "CACHE_MEDIA", payload: { pageUrl: location.href,
+      media: ProfileMedia.profile(location.href) ? ProfileMedia.posts(rankedMedia()) : rankedMedia().slice(0, 60) }
+  }).catch(() => {});
 }
 
 function collectFromDom() {
+  syncMediaPage();
+  if (ProfileMedia.profile(location.href)) {
+    profileCards = ProfileMedia.cards(document, location.href, rankedMedia());
+    profileCards.forEach(({ item }) => profilePostIds.add(item.postId));
+    mergeMedia(profileCards.map(({ item }) => item), location.href, false);
+    return;
+  }
   const found = [];
   const scope = findActivePost() || document;
 
@@ -206,6 +281,9 @@ function bestSrcsetUrl(srcset) {
 }
 
 function rankedMedia() {
+  if (ProfileMedia.profile(location.href)) {
+    return [...mediaByUrl.values()].filter((item) => profilePostIds.has(item.postId));
+  }
   const ranked = [...mediaByUrl.values()]
     .sort((a, b) => {
       if (a.kind !== b.kind) return a.kind === "video" ? -1 : 1;
@@ -272,7 +350,36 @@ function scheduleOverlayRefresh() {
   overlayRefreshTimer = setTimeout(refreshDownloadOverlays, 200);
 }
 
+function scheduleOverlayPositionRefresh() {
+  scheduleOverlayRefresh();
+  if (overlayPositionFrame !== undefined) return;
+  overlayPositionFrame = requestAnimationFrame(() => {
+    overlayPositionFrame = undefined;
+    syncMediaPage();
+    if (ProfileMedia.profile(location.href)) positionProfileOverlays();
+    else refreshDownloadOverlays();
+  });
+}
+
 function refreshDownloadOverlays() {
+  syncMediaPage();
+  if (ProfileMedia.profile(location.href)) {
+    if (overlayHost) overlayHost.style.display = "none";
+    refreshProfileOverlays();
+    if (!profileScanPending && Date.now() - lastProfileScan > 2000) {
+      profileScanPending = true;
+      lastProfileScan = Date.now();
+      const pageUrl = location.href;
+      requestRuntimeMedia().then((media) => {
+        if (pageUrl !== location.href) return;
+        mergeMedia(media, pageUrl);
+        refreshProfileOverlays();
+      }).finally(() => { profileScanPending = false; });
+    }
+    return;
+  }
+  for (const { host } of profileOverlays.values()) host.remove();
+  profileOverlays.clear();
   const mediaElement = findVisibleMediaElement();
 
   if (!mediaElement) {
@@ -290,8 +397,8 @@ function refreshDownloadOverlays() {
     : location.href;
   const rect = mediaElement.getBoundingClientRect();
   overlayHost.style.display = "block";
-  overlayHost.style.top = `${Math.max(8, rect.top + 44)}px`;
-  overlayHost.style.left = `${Math.max(8, rect.right - 40)}px`;
+  overlayHost.style.top = `${rect.top + 44}px`;
+  overlayHost.style.left = `${rect.right - 40}px`;
 }
 
 function findVisibleMediaElement() {
@@ -315,9 +422,15 @@ function isLargeVisibleMedia(element) {
 
 function ensureOverlay() {
   if (overlayHost?.isConnected) return;
-  overlayHost = document.createElement("div");
+  const overlay = createOverlay((event, button) => downloadFromOverlay(event, button));
+  overlayHost = overlay.host;
+  overlayButton = overlay.button;
   overlayHost.id = "ti-downloader-overlay-root";
-  Object.assign(overlayHost.style, {
+}
+
+function createOverlay(onClick) {
+  const host = document.createElement("div");
+  Object.assign(host.style, {
     all: "initial",
     position: "fixed",
     zIndex: "2147483647",
@@ -326,11 +439,11 @@ function ensureOverlay() {
     pointerEvents: "auto"
   });
 
-  const shadow = overlayHost.attachShadow({ mode: "closed" });
-  overlayButton = document.createElement("button");
-  overlayButton.type = "button";
-  setOverlayButtonState(overlayButton, "download");
-  Object.assign(overlayButton.style, {
+  const shadow = host.attachShadow({ mode: "closed" });
+  const button = document.createElement("button");
+  button.type = "button";
+  setOverlayButtonState(button, "download");
+  Object.assign(button.style, {
     all: "initial",
     display: "grid",
     placeItems: "center",
@@ -351,11 +464,68 @@ function ensureOverlay() {
     @keyframes ti-spin { to { transform: rotate(360deg); } }
   `;
   ["pointerdown", "mousedown", "mouseup"].forEach((type) => {
-    overlayButton.addEventListener(type, stopOverlayEvent, true);
+    button.addEventListener(type, stopOverlayEvent, true);
   });
-  overlayButton.addEventListener("click", (event) => downloadFromOverlay(event, overlayButton), true);
-  shadow.append(style, overlayButton);
-  document.documentElement.append(overlayHost);
+  button.addEventListener("click", (event) => onClick(event, button), true);
+  shadow.append(style, button);
+  document.documentElement.append(host);
+  return { host, button };
+}
+
+function refreshProfileOverlays() {
+  collectFromDom();
+  positionProfileOverlays();
+}
+
+function positionProfileOverlays() {
+  const placements = [];
+  for (const card of profileCards) {
+    if (card.element.isConnected === false) continue;
+    const bounds = card.element.getBoundingClientRect();
+    const rect = bounds.width >= 80 && bounds.height >= 80 ? bounds : card.element.querySelector("img, video")?.getBoundingClientRect();
+    if (!rect || rect.width < 80 || rect.height < 80 || rect.bottom <= 0 || rect.top >= innerHeight || rect.right <= 0 || rect.left >= innerWidth) continue;
+    placements.push({ card, top: rect.top + 8, left: rect.right - 38 });
+  }
+  const visible = new Set();
+  for (const { card, top, left } of placements) {
+    visible.add(card.item.postId);
+    let overlay = profileOverlays.get(card.item.postId);
+    if (!overlay) {
+      overlay = createOverlay((event, button) => downloadProfilePost(event, button, card.item));
+      overlay.host.className = "ti-downloader-profile-overlay";
+      profileOverlays.set(card.item.postId, overlay);
+    }
+    overlay.host.style.top = `${top}px`;
+    overlay.host.style.left = `${left}px`;
+  }
+  for (const [id, overlay] of profileOverlays) {
+    if (!visible.has(id)) {
+      overlay.host.remove();
+      profileOverlays.delete(id);
+    }
+  }
+}
+
+async function downloadProfilePost(event, button, post) {
+  event.preventDefault();
+  event.stopPropagation();
+  button.disabled = true;
+  setOverlayButtonState(button, "loading");
+  const pageUrl = location.href;
+  try {
+    await refreshMedia();
+    if (pageUrl !== location.href) throw new Error("The profile changed. Try again from the current profile.");
+    const found = mediaForUi().filter((item) => item.postId === post.postId);
+    const timestamp = timestampSlug();
+    const items = (found.length ? found : [post]).map((item, index) => ({ item,
+      filename: `ti_downloader-${post.platform}-${post.postId}-${timestamp}-${String(index + 1).padStart(2, "0")}.${item.kind === "post" ? "post" : item.kind === "video" ? "mp4" : imageExtension(item.url)}` }));
+    const response = await chrome.runtime.sendMessage({ type: "START_DOWNLOAD", items });
+    showButtonResult(button, response?.ok, response?.ok
+      ? response.state === "needs-folder" ? "Choose a download folder" : "Download started"
+      : response?.error || "Download failed");
+  } catch (error) {
+    showButtonResult(button, false, error.message);
+  }
 }
 
 function stopOverlayEvent(event) {
@@ -403,6 +573,12 @@ async function downloadFromOverlay(event, button) {
 
 async function prepareMedia(item) {
   if (!item || !["video", "image"].includes(item.kind)) throw new Error("No valid media is available.");
+  if (item.postId && item.pendingResolution) {
+    const resolved = await resolveProfilePost(item);
+    const media = resolved.find((candidate) => candidate.mediaIndex === (item.mediaIndex || 0));
+    if (!media || media.kind !== item.kind) throw new Error("The post media changed. Refresh the profile and try again.");
+    return prepareMedia(media);
+  }
   if (location.hostname.endsWith("instagram.com") && item.kind === "video") {
     const permalink = item.permalink || getCurrentInstagramPermalink();
     const resolved = item.verified === true && isAllowedInstagramVideoUrl(item.url)
@@ -413,6 +589,52 @@ async function prepareMedia(item) {
   }
   if (!item?.url || !isSafeMedia(item)) throw new Error("No valid media URL is available.");
   return { source: item.kind === "video" ? "page-video" : "image", url: item.url };
+}
+
+async function resolveProfilePost(item) {
+  syncMediaPage();
+  const post = ProfileMedia.post(item?.permalink, location.href);
+  if (!post || post.postId !== item?.postId) throw new Error("The profile post is invalid. Refresh the source page.");
+  const key = `${post.platform}:${post.postId}`;
+  const cached = profileResolveCache.get(key);
+  if (cached?.expiresAt > Date.now()) return cached.promise;
+  const pageUrl = location.href;
+  const known = rankedMedia().filter((entry) => entry.postId === post.postId);
+  const complete = (items) => items.length > 0 && items.length >= Math.max(...items.map((entry) => entry.mediaCount || 1)) &&
+    items.every((entry) => !entry.pendingResolution && isSafeMedia(entry));
+  const promise = (async () => {
+    if (complete(known)) return known.sort((a, b) => a.mediaIndex - b.mediaIndex);
+    let resolved = [];
+    let requestedId;
+    if (post.platform === "instagram") {
+      requestedId = item.postMediaId || known[0]?.postMediaId || item.mediaId || known[0]?.mediaId;
+      if (requestedId) {
+        const media = await fetchInstagramPostInfo(requestedId, post.postId).catch(() => null);
+        if (media) resolved = ProfileMedia.instagramItems(media, post);
+      }
+    }
+    if (!complete(resolved)) {
+      const response = await fetch(post.permalink, { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error(`Post request failed (${response.status}). Open the post and try again.`);
+      const html = await response.text();
+      resolved = ProfileMedia.fromHtml(html, post.permalink);
+      if (post.platform === "instagram" && !complete(resolved)) {
+        const mediaId = resolved[0]?.postMediaId || extractInstagramMediaFromHtml(html, post.postId)?.mediaId;
+        if (mediaId && mediaId !== requestedId) {
+          const media = await fetchInstagramPostInfo(mediaId, post.postId);
+          if (media) resolved = ProfileMedia.instagramItems(media, post);
+        }
+      }
+    }
+    if (!complete(resolved)) throw new Error("Could not resolve this post. Open it, sign in if needed, then try again.");
+    if (pageUrl === location.href) mergeMedia(resolved, pageUrl);
+    return resolved.sort((a, b) => a.mediaIndex - b.mediaIndex);
+  })().catch((error) => {
+    if (profileResolveCache.get(key)?.promise === promise) profileResolveCache.delete(key);
+    throw error;
+  });
+  profileResolveCache.set(key, { promise, expiresAt: Date.now() + 30000 });
+  return promise;
 }
 
 async function resolveInstagramProgressiveVideoCached(permalink) {
@@ -560,6 +782,13 @@ function pickBestInstagramProgressiveDeep(root) {
 }
 
 async function fetchInstagramMediaInfo(mediaId, shortcode) {
+  const media = await fetchInstagramPostInfo(mediaId, shortcode);
+  if (!media) return null;
+  const url = pickBestInstagramProgressiveDeep(media);
+  return url ? { url, mediaId: String(mediaId).split("_")[0] } : null;
+}
+
+async function fetchInstagramPostInfo(mediaId, shortcode) {
   const pk = String(mediaId).split("_")[0];
   if (!/^\d+$/.test(pk)) return null;
   const headers = {
@@ -574,15 +803,16 @@ async function fetchInstagramMediaInfo(mediaId, shortcode) {
     method: "GET",
     mode: "cors",
     credentials: "include",
-    headers
+    headers,
+    signal: AbortSignal.timeout(10000)
   });
   if (!response.ok) return null;
   const media = (await response.json())?.items?.[0];
   if (!media) return null;
   const responseCode = media.code || media.shortcode;
   if (responseCode && String(responseCode) !== shortcode) return null;
-  const url = pickBestInstagramProgressiveDeep(media);
-  return url ? { url, mediaId: pk } : null;
+  if (!responseCode && String(media.pk || media.id || "").split("_")[0] !== pk) return null;
+  return media;
 }
 
 function numericValue(value) {

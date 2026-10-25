@@ -30,21 +30,48 @@ function ports() {
   return { pair, messages, closed: () => closed };
 }
 
-function content({ hostname = "www.tiktok.com", fetch = async () => { throw new Error("Unexpected page fetch"); }, sendMessage = async () => null } = {}) {
+function content({ hostname = "www.tiktok.com", pageUrl, document: pageDocument, runtimeMedia = [],
+  fetch = async () => { throw new Error("Unexpected page fetch"); }, sendMessage = async () => null } = {}) {
   const onConnect = event();
   const onMessage = event();
+  const listeners = new Map();
+  const frames = new Map();
+  let frameId = 0;
+  const dispatch = (type, event) => {
+    for (const fn of [...(listeners.get(type) || [])]) fn(event);
+  };
+  const window = {
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) { listeners.get(type)?.delete(fn); },
+    postMessage(message) {
+      if (message.type !== "GET_RUNTIME_MEDIA") return;
+      queueMicrotask(() => {
+        dispatch("message", { source: window, origin: context.location.origin,
+          data: { source: "ti_downloader_page", type: "RUNTIME_MEDIA", requestId: message.requestId, media: runtimeMedia } });
+      });
+    }
+  };
   const context = vm.createContext({
-    URL, AbortController, Uint8Array, btoa, crypto: require("node:crypto").webcrypto, fetch,
-    location: new URL(`https://${hostname}/${hostname.includes("instagram") ? "p/POST/" : "@user/video/123"}`),
-    window: { addEventListener() {}, removeEventListener() {} },
-    document: { documentElement: {}, querySelectorAll: () => [], querySelector: () => null },
+    URL, AbortController, AbortSignal, Uint8Array, btoa, crypto: require("node:crypto").webcrypto, fetch,
+    location: new URL(pageUrl || `https://${hostname}/${hostname.includes("instagram") ? "p/POST/" : "@user/video/123"}`),
+    window, innerWidth: 1200, innerHeight: 900,
+    document: pageDocument || { documentElement: {}, cookie: "", querySelectorAll: () => [], querySelector: () => null },
     MutationObserver: class { observe() {} }, setTimeout() {}, clearTimeout() {},
+    requestAnimationFrame(fn) { const id = ++frameId; frames.set(id, fn); return id; },
     chrome: { runtime: { onConnect, onMessage, sendMessage } }
   });
+  vm.runInContext(source("profile-media.js"), context);
   vm.runInContext(source("page-stream.js"), context);
   vm.runInContext(source("content.js"), context);
   return {
-    context, connect: (port) => onConnect.emit(port),
+    context, dispatch, frames, frame() {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      callbacks.forEach((fn) => fn());
+    }, connect: (port) => onConnect.emit(port),
     message: (message) => new Promise((resolve) => onMessage.emit(message, {}, resolve))
   };
 }
@@ -93,10 +120,13 @@ function directory({ name = "Saved media", permission = "granted", granted = "gr
 function element(tagName = "") {
   const listeners = new Map();
   return {
-    tagName: tagName.toUpperCase(), textContent: "", disabled: false, hidden: false, children: [],
+    tagName: tagName.toUpperCase(), textContent: "", disabled: false, hidden: false, children: [], style: {}, dataset: {},
+    get isConnected() { return Boolean(this.parentElement); },
     addEventListener(name, fn) { listeners.set(name, fn); },
-    click() { if (!this.disabled) return listeners.get("click")?.(); },
-    append(...nodes) { this.children.push(...nodes); },
+    click() { if (!this.disabled) return listeners.get("click")?.({ preventDefault() {}, stopPropagation() {} }); },
+    append(...nodes) { nodes.forEach((node) => { node.parentElement = this; }); this.children.push(...nodes); },
+    remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter((node) => node !== this); },
+    attachShadow() { this.shadow = element(); return this.shadow; },
     replaceChildren(...nodes) { this.children = nodes; },
     querySelectorAll(selector) {
       return this.children.flatMap((child) => [
@@ -109,6 +139,7 @@ function element(tagName = "") {
 }
 
 function background({ storage = {}, session = {}, failWindow = false, loadError = false,
+  resolve = async () => { throw new Error("Unexpected post resolution"); },
   open = async () => new Response(Uint8Array.of(0, 255, 128)).body } = {}) {
   const onMessage = event();
   const windows = [];
@@ -148,7 +179,8 @@ function background({ storage = {}, session = {}, failWindow = false, loadError 
         async setBadgeText({ text }) { badge = text; },
         async setBadgeBackgroundColor() {}, async setTitle() {}
       },
-      windows: { async create(options) { if (failWindow) throw new Error("Window failed"); windows.push(options); return { id: windows.length }; } }
+      windows: { async create(options) { if (failWindow) throw new Error("Window failed"); windows.push(options); return { id: windows.length }; } },
+      tabs: { async sendMessage(tabId, message) { return { ok: true, items: await resolve(message.item, tabId) }; } }
     }
   });
   vm.runInContext(source("background.js"), context);

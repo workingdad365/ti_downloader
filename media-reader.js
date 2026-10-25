@@ -39,7 +39,34 @@
   }
 
   async function prepareMedia(tabId, item, signal) {
-    const response = chrome.tabs.sendMessage(tabId, { type: "PREPARE_PAGE_MEDIA", item });
+    return sendToPage(tabId, { type: "PREPARE_PAGE_MEDIA", item }, signal);
+  }
+
+  async function resolve(tabId, item, { signal } = {}) {
+    const response = await sendToPage(tabId, { type: "RESOLVE_PROFILE_POST", item }, signal);
+    signal?.throwIfAborted();
+    if (!response?.ok) throw new Error(response?.error || "Could not resolve the profile post.");
+    const items = response.items;
+    if (!Array.isArray(items) || !items.length || items.length > 40 ||
+        items.some((media) => !media || media.postId !== item.postId || media.pendingResolution ||
+          !["video", "image"].includes(media.kind)) ||
+        new Set(items.map((media) => media.mediaIndex)).size !== items.length) {
+      throw new Error("The resolved post contains invalid media.");
+    }
+    for (const media of items) allowedUrl(media.url);
+    return items;
+  }
+
+  function resolvedFilename(filename, item, multiple) {
+    const extension = item.kind === "video" ? "mp4"
+      : new URL(item.url).pathname.match(/\.(jpe?g|png|webp)(?:$|\/)/i)?.[1]?.toLowerCase().replace("jpeg", "jpg") || "jpg";
+    const base = String(filename || "media").replace(/\.(post|mp4|jpe?g|png|webp)$/i, "");
+    return `${base}${multiple ? `-${String((item.mediaIndex || 0) + 1).padStart(2, "0")}` : ""}.${extension}`;
+  }
+
+  async function sendToPage(tabId, message, signal) {
+    signal?.throwIfAborted();
+    const response = chrome.tabs.sendMessage(tabId, message);
     if (!signal) return response;
     let onAbort;
     try {
@@ -152,5 +179,5 @@
     }
   }
 
-  globalThis.MediaReader = { open };
+  globalThis.MediaReader = { open, resolve, resolvedFilename };
 })();

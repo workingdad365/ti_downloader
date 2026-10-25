@@ -49,7 +49,11 @@ test("기존 미디어 세션 캐시를 계속 읽고 갱신", async () => {
   assert.equal(await fixture.message({ type: "GET_CACHED_MEDIA" }, sender), payload);
 });
 
-function popup({ storage = {}, state = "started", unsupported = false, optionsError = false } = {}) {
+function popup({ storage = {}, state = "started", unsupported = false, optionsError = false,
+  profile = false, limitReached = false, items = [
+    { kind: "video", url: "https://v.tiktokcdn.com/one.mp4" },
+    { kind: "image", url: "https://v.tiktokcdn.com/two.jpg" }
+  ] } = {}) {
   const elements = new Map([...source("popup.html").matchAll(/id="([^"]+)"/g)].map((match) => [match[1], element()]));
   const created = [];
   const requests = [];
@@ -58,10 +62,6 @@ function popup({ storage = {}, state = "started", unsupported = false, optionsEr
   let closed = false;
   let settingsOpened = 0;
   elements.get("choose-folder").disabled = true;
-  const items = [
-    { kind: "video", url: "https://v.tiktokcdn.com/one.mp4" },
-    { kind: "image", url: "https://v.tiktokcdn.com/two.jpg" }
-  ];
   const context = vm.createContext({ URL, window: { close() { closed = true; } },
     FolderStore: { ...FolderStore, load: async () => storage.directory || null },
     document: {
@@ -78,7 +78,8 @@ function popup({ storage = {}, state = "started", unsupported = false, optionsEr
         return { ok: true, state };
       } },
       storage: { onChanged },
-      tabs: { query: async () => [{ id: 7, url: unsupported ? "https://example.com" : "https://www.tiktok.com/@user/video/123" }], sendMessage: async () => ({ media: items, platform: "tiktok" }) }
+      tabs: { query: async () => [{ id: 7, url: unsupported ? "https://example.com" : "https://www.tiktok.com/@user/video/123" }],
+        sendMessage: async () => ({ media: items, platform: "tiktok", profile, limitReached }) }
     }
   });
   vm.runInContext(source("popup.js"), context);
@@ -167,4 +168,30 @@ test("영상 위 버튼은 백그라운드 다운로드를 요청", async () => 
   assert.equal(requests[0].items[0].item.kind, "video");
   assert.match(requests[0].items[0].filename, /^ti_downloader-tiktok-123-/);
   assert.equal(button.title, "Download started");
+});
+
+test("프로필 팝업은 40개를 넘는 게시물을 표시하고 게시물별 ID로 파일명을 생성", async () => {
+  const items = Array.from({ length: 45 }, (_, index) => ({ kind: index === 0 ? "post" : "video",
+    postId: String(index + 1), mediaIndex: 0, mediaCount: index === 0 ? 2 : 1, pendingResolution: true,
+    url: `https://www.tiktok.com/@user/video/${index + 1}`, permalink: `https://www.tiktok.com/@user/video/${index + 1}` }));
+  const fixture = popup({ profile: true, items });
+  await tick();
+  assert.equal(fixture.elements.get("media-list").children.length, 45);
+  assert.equal(fixture.elements.get("platform").textContent, "tiktok profile");
+  assert.match(fixture.elements.get("status").textContent, /45 post\(s\)/);
+  assert.equal(fixture.elements.get("media-list").children[0].children[0].textContent, "POST");
+  assert.match(fixture.elements.get("media-list").children[0].children[1].children[0].textContent, /2 files/);
+  await fixture.elements.get("download-all").click();
+  assert.equal(fixture.requests[0].items.length, 45);
+  assert.match(fixture.requests[0].items[0].filename, /^ti_downloader-tiktok-1-.*\.post$/);
+  assert.match(fixture.requests[0].items[44].filename, /^ti_downloader-tiktok-45-.*\.mp4$/);
+});
+
+test("프로필 팝업은 목록 제한과 빈 프로필 안내를 표시", async () => {
+  const limited = popup({ profile: true, limitReached: true });
+  const empty = popup({ profile: true, items: [] });
+  await tick();
+  assert.match(limited.elements.get("status").textContent, /500 posts/);
+  assert.match(empty.elements.get("status").textContent, /Scroll the profile/);
+  assert.equal(empty.elements.get("download-all").disabled, true);
 });

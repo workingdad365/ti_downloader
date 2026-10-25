@@ -43,8 +43,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function startDownload(tabId, items) {
-  if (!Array.isArray(items) || !items.length || items.length > 40 ||
-      items.some((entry) => !entry?.item || !["video", "image"].includes(entry.item.kind))) {
+  if (!Array.isArray(items) || !items.length || items.length > 500 ||
+      items.some((entry) => !entry?.item || !["post", "video", "image"].includes(entry.item.kind) ||
+        (entry.item.kind === "post" && (!entry.item.postId || !entry.item.permalink)))) {
     throw new Error("Invalid download list.");
   }
   if (!Number.isInteger(tabId) || tabId < 0) throw new Error("The source tab is unavailable.");
@@ -95,21 +96,32 @@ function sanitizeFilename(filename) {
 
 async function runDownload(id, job, directory, controller) {
   const { signal } = controller;
+  const queue = [...job.items];
   let saved = 0;
   let failed = 0;
   let lastFailure = "";
   try {
-    for (let index = 0; index < job.items.length; index += 1) {
+    for (let index = 0; index < queue.length; index += 1) {
       signal.throwIfAborted();
-      await publishStatus({ id, state: "saving", saved, total: job.items.length,
-        message: `Saving ${index + 1} of ${job.items.length} to ${directory.name}...` });
-      const { item, filename } = job.items[index];
+      await publishStatus({ id, state: "saving", saved, total: queue.length,
+        message: `Saving ${index + 1} of ${queue.length} to ${directory.name}...` });
+      let { item, filename } = queue[index];
       let source;
       let writing = false;
       const responseTimeout = setTimeout(() => {
         controller.abort(new Error("The media request timed out. Try again from the source page."));
       }, 25000);
       try {
+        if (item.postId && (item.pendingResolution || item.kind === "post")) {
+          const media = await MediaReader.resolve(job.tabId, item, { signal });
+          signal.throwIfAborted();
+          const expanded = media.map((resolved) => ({ item: resolved,
+            filename: MediaReader.resolvedFilename(filename, resolved, media.length > 1) }));
+          queue.splice(index, 1, ...expanded);
+          ({ item, filename } = queue[index]);
+          await publishStatus({ id, state: "saving", saved, total: queue.length,
+            message: `Saving ${index + 1} of ${queue.length} to ${directory.name}...` });
+        }
         source = await MediaReader.open(job.tabId, item, { signal });
         clearTimeout(responseTimeout);
         signal.throwIfAborted();
@@ -125,11 +137,11 @@ async function runDownload(id, job, directory, controller) {
         await source?.cancel().catch(() => {});
       }
     }
-    await publishStatus({ id, state: failed ? "error" : "complete", saved, total: job.items.length,
+    await publishStatus({ id, state: failed ? "error" : "complete", saved, total: queue.length,
       message: `Saved ${saved} file(s) to ${directory.name}.${failed ? ` ${failed} failed: ${lastFailure}` : ""}` });
   } catch (error) {
     const stopped = signal.aborted && signal.reason?.name === "AbortError";
-    await publishStatus({ id, state: stopped ? "stopped" : "error", saved, total: job.items.length,
+    await publishStatus({ id, state: stopped ? "stopped" : "error", saved, total: queue.length,
       message: stopped ? `Download stopped. Saved ${saved} file(s) to ${directory.name}.` : (signal.aborted ? signal.reason.message : error.message) });
   }
 }

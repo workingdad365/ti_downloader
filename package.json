@@ -1,8 +1,10 @@
 {
   "name": "ti_downloader",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "scripts": {
+    "build": "node scripts/build.cjs",
+    "pretest": "node scripts/build.cjs --check",
     "test": "node --test"
   }
 }

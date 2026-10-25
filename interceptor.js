@@ -7,8 +7,9 @@
   const originalSend = XMLHttpRequest.prototype.send;
 
   window.fetch = async function (...args) {
+    const pageUrl = location.href;
     const response = await originalFetch.apply(this, args);
-    if (isDetailPage()) inspectResponse(response.clone());
+    if (pageUrl === location.href && (isDetailPage() || ProfileMedia.profile(pageUrl))) inspectResponse(response.clone(), pageUrl);
     return response;
   };
 
@@ -18,17 +19,18 @@
   };
 
   XMLHttpRequest.prototype.send = function () {
+    const pageUrl = location.href;
     this.addEventListener("load", function () {
       try {
-        if (!isDetailPage()) return;
+        if (pageUrl !== location.href || (!isDetailPage() && !ProfileMedia.profile(pageUrl))) return;
         const contentType = this.getResponseHeader("content-type") || "";
         if (this.responseType === "json" && this.response) {
-          publish(this.response);
+          publish(this.response, pageUrl);
           return;
         }
         if (this.responseType && this.responseType !== "text") return;
         if (!contentType.includes("json") && !String(this.responseText || "").trim().startsWith("{")) return;
-        publish(JSON.parse(this.responseText));
+        publish(JSON.parse(this.responseText), pageUrl);
       } catch {
         // Non-JSON network responses are irrelevant.
       }
@@ -40,7 +42,8 @@
     if (event.source !== window || event.origin !== location.origin) return;
     if (event.data?.source !== "ti_downloader" || event.data?.type !== "GET_RUNTIME_MEDIA") return;
 
-    const media = isTikTok() ? getTikTokRuntimeMedia() : getInstagramRuntimeMedia();
+    const media = ProfileMedia.profile(location.href) ? getProfileRuntimeMedia()
+      : isTikTok() ? getTikTokRuntimeMedia() : getInstagramRuntimeMedia();
     window.postMessage(
       {
         source: "ti_downloader_page",
@@ -53,24 +56,25 @@
     );
   }, true);
 
-  async function inspectResponse(response) {
+  async function inspectResponse(response, pageUrl) {
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("json")) return;
     try {
-      publish(await response.json());
+      publish(await response.json(), pageUrl);
     } catch {
       // Ignore incomplete or non-JSON response bodies.
     }
   }
 
-  function publish(data) {
-    const media = collectMedia(data);
+  function publish(data, pageUrl = location.href) {
+    if (pageUrl !== location.href) return;
+    const media = ProfileMedia.profile(pageUrl) ? ProfileMedia.collect(data, pageUrl) : collectMedia(data);
     if (!media.length) return;
     window.postMessage(
       {
         source: "ti_downloader_page",
         type: "MEDIA_FOUND",
-        pageUrl: location.href,
+        pageUrl,
         media
       },
       location.origin
@@ -158,40 +162,7 @@
   }
 
   function selectTikTokVideo(video) {
-    const candidates = [];
-    addTikTokCandidates(candidates, video?.playAddr, 500);
-    addTikTokCandidates(candidates, video?.PlayAddrStruct?.UrlList, 450);
-    addTikTokCandidates(candidates, video?.play_addr?.url_list, 400);
-
-    const bitrate = video?.bitrateInfo || video?.bit_rate;
-    if (Array.isArray(bitrate)) {
-      bitrate.forEach((item) => {
-        const score = Number(item?.Bitrate || item?.bit_rate || 0) + 300;
-        addTikTokCandidates(candidates, item?.PlayAddr?.UrlList, score);
-        addTikTokCandidates(candidates, item?.play_addr?.url_list, score);
-      });
-    }
-
-    addTikTokCandidates(candidates, video?.downloadAddr, 200);
-    addTikTokCandidates(candidates, video?.download_addr?.url_list, 200);
-    return candidates
-      .filter((candidate) => !isTikTokPageUrl(candidate.url) && isMediaHost(candidate.url))
-      .sort((a, b) => b.score - a.score)[0] || null;
-  }
-
-  function addTikTokCandidates(candidates, value, score) {
-    const values = typeof value === "string"
-      ? [value]
-      : Array.isArray(value)
-        ? value
-        : Array.isArray(value?.urlList)
-          ? value.urlList
-          : [];
-    values.forEach((rawUrl) => {
-      if (typeof rawUrl !== "string") return;
-      const url = decodeUrl(rawUrl);
-      if (url.startsWith("https://")) candidates.push({ url, score });
-    });
+    return ProfileMedia.tiktokVideo(video);
   }
 
   function firstUrl(value) {
@@ -272,6 +243,53 @@
     return isInstagram()
       ? /^\/(p|reel|tv)\/[^/]+/.test(location.pathname)
       : /\/video\/\d+/.test(location.pathname);
+  }
+
+  function getProfileRuntimeMedia() {
+    const found = new Map();
+    const add = (root) => {
+      for (const item of ProfileMedia.collect(root, location.href)) {
+        if (ProfileMedia.prefer(item, found.get(ProfileMedia.key(item)))) found.set(ProfileMedia.key(item), item);
+      }
+    };
+    let bytes = 0;
+    for (const script of document.querySelectorAll('script[type="application/json"], script#SIGI_STATE, script#__NEXT_DATA__')) {
+      const text = script.textContent || "";
+      bytes += text.length;
+      if (bytes > 20000000) break;
+      try { add(JSON.parse(text)); } catch {}
+    }
+    if (isTikTok()) {
+      add(window.SIGI_STATE);
+      add(window.__$UNIVERSAL_DATA$__);
+    }
+
+    const nodes = [...new Set([
+      ...document.querySelectorAll('[data-e2e="user-post-item-list"], [class*="DivVideoListContainer"], [data-e2e="user-post-item"], [class*="DivItemContainer"], div[id^="column-item-video-container-"]'),
+      ...ProfileMedia.cards(document, location.href).map((card) => card.element)
+    ])].slice(0, 100);
+    const queue = [];
+    for (const node of nodes) {
+      for (const key of Object.getOwnPropertyNames(node)) {
+        if (key.startsWith("__reactFiber$") || key.startsWith("__reactProps$")) queue.push({ value: node[key], depth: 0 });
+      }
+    }
+    const seen = new WeakSet();
+    const keys = ["child", "sibling", "alternate", "return", "memoizedProps", "pendingProps", "memoizedState",
+      "props", "children", "item", "items", "itemInfo", "itemStruct", "aweme", "awemeInfo", "videoData", "itemList", "list", "data", "edges", "node", "post", "media", "next"];
+    let inspected = 0;
+    while (queue.length && inspected < 6000) {
+      const { value, depth } = queue.pop();
+      if (!value || typeof value !== "object" || depth > 18 || seen.has(value)) continue;
+      seen.add(value);
+      inspected += 1;
+      if ((value.code || value.shortcode) && (value.media_type || value.is_video !== undefined) ||
+          (value.id || value.aweme_id || value.itemId) && (value.video || value.imagePost || value.image_post_info)) add(value);
+      for (const child of Array.isArray(value) ? value : keys.map((key) => value[key])) {
+        if (child && typeof child === "object") queue.push({ value: child, depth: depth + 1 });
+      }
+    }
+    return [...found.values()];
   }
 
   function getTikTokRuntimeMedia() {

@@ -18,6 +18,9 @@ let media = [];
 let instagramVideoDisabled = false;
 let resolveError = "";
 let directory = null;
+let profilePage = false;
+let limitReached = false;
+let mediaLoadId = 0;
 
 refreshButton.addEventListener("click", loadMedia);
 downloadAllButton.addEventListener("click", () => downloadItems(media));
@@ -79,26 +82,35 @@ function renderDownloadStatus(status) {
 }
 
 async function loadMedia() {
-  setStatus("Looking for media in the current post...");
+  const requestId = ++mediaLoadId;
+  setStatus("Looking for posts and media...");
   listElement.replaceChildren();
+  media = [];
   downloadAllButton.disabled = true;
 
-  [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (requestId !== mediaLoadId) return;
+  activeTab = tab;
   if (!activeTab?.id || !isSupportedUrl(activeTab.url)) {
     platformElement.textContent = "unsupported";
-    setStatus("Open an Instagram or TikTok post to use this extension.");
+    setStatus("Open an Instagram or TikTok post or profile to use this extension.");
     return;
   }
 
   try {
     const response = await chrome.tabs.sendMessage(activeTab.id, { type: "GET_MEDIA" });
-    media = deduplicate(response?.media || []).slice(0, 40);
+    if (requestId !== mediaLoadId) return;
+    if (response?.ok === false) throw new Error(response.error);
+    const detected = deduplicate(response?.media || []);
+    media = detected.slice(0, 500);
+    profilePage = response?.profile === true;
+    limitReached = response?.limitReached === true || detected.length > media.length;
     instagramVideoDisabled = response?.instagramVideoDisabled === true;
     resolveError = response?.resolveError || "";
-    platformElement.textContent = response?.platform || "unknown";
+    platformElement.textContent = `${response?.platform || "unknown"}${profilePage ? " profile" : ""}`;
     renderMedia();
   } catch (error) {
-    setStatus("Reload the page, then try again.");
+    if (requestId === mediaLoadId) setStatus("Reload the page, then try again.");
   }
 }
 
@@ -106,13 +118,14 @@ function renderMedia() {
   if (!media.length) {
     setStatus(instagramVideoDisabled
       ? "Instagram video downloads are disabled for safety. You can still download images."
-      : resolveError || "No media found. Play the post or browse its slides, then click Refresh.");
+      : resolveError || (profilePage ? "No posts found. Scroll the profile to load posts, then click Refresh."
+        : "No media found. Play the post or browse its slides, then click Refresh."));
     return;
   }
 
   const videoCount = media.filter((item) => item.kind === "video").length;
-  const imageCount = media.length - videoCount;
-  setStatus(instagramVideoDisabled
+  const imageCount = media.filter((item) => item.kind === "image").length;
+  setStatus(profilePage ? `Found ${media.length} post(s). Scroll to load more, then Refresh.${limitReached ? " Showing up to 500 posts." : ""}` : instagramVideoDisabled
     ? `Found ${imageCount} image(s). Instagram video downloads are disabled.`
     : `Found ${videoCount} video(s) and ${imageCount} image(s).`);
   downloadAllButton.disabled = false;
@@ -123,12 +136,14 @@ function renderMedia() {
 
     const kind = document.createElement("span");
     kind.className = "kind";
-    kind.textContent = item.kind === "video" ? "VIDEO" : "IMAGE";
+    kind.textContent = item.kind.toUpperCase();
 
     const copy = document.createElement("div");
     copy.className = "media-copy";
     const title = document.createElement("strong");
-    title.textContent = `${item.kind === "video" ? "Video" : "Image"} ${index + 1}`;
+    title.textContent = profilePage ? `Post ${item.postId}${item.mediaCount > 1 ? ` (${item.mediaCount} files)` : ""}`
+      : `${item.kind === "video" ? "Video" : "Image"} ${index + 1}`;
+    if (item.title) title.title = item.title;
     const host = document.createElement("small");
     host.textContent = item.pendingResolution ? "Resolve source URL on download" : safeHostname(item.url);
     copy.append(title, host);
@@ -145,9 +160,9 @@ function renderMedia() {
 
 async function downloadItems(items) {
   if (!items.length) return;
-  const slug = postSlug(activeTab.url);
   const batchTimestamp = timestampSlug();
   const downloads = items.map((item, index) => {
+    const slug = postSlug(item.permalink || activeTab.url);
     const extension = extensionFor(item);
     const filename = `ti_downloader-${slug}-${batchTimestamp}-${String(index + 1).padStart(2, "0")}.${extension}`;
     return { item, filename };
@@ -175,14 +190,17 @@ async function startDownload(items) {
 function deduplicate(items) {
   const byUrl = new Map();
   for (const item of items) {
-    if (!item?.url || !["video", "image"].includes(item.kind)) continue;
-    const current = byUrl.get(item.url);
-    if (!current || Number(item.score || 0) > Number(current.score || 0)) byUrl.set(item.url, item);
+    if (!item?.url || !["post", "video", "image"].includes(item.kind)) continue;
+    const key = item.postId ? `${item.postId}:${item.mediaIndex || 0}` : item.url;
+    const current = byUrl.get(key);
+    if (!current || (current.pendingResolution && !item.pendingResolution) ||
+        Number(item.score || 0) > Number(current.score || 0)) byUrl.set(key, item);
   }
   return [...byUrl.values()];
 }
 
 function extensionFor(item) {
+  if (item.kind === "post") return "post";
   if (item.kind === "video") return "mp4";
   try {
     const extension = new URL(item.url).pathname.match(/\.(jpe?g|png|webp)(?:$|\/)/i)?.[1];
@@ -196,7 +214,7 @@ function postSlug(rawUrl) {
   try {
     const url = new URL(rawUrl);
     const parts = url.pathname.split("/").filter(Boolean);
-    const marker = parts.findIndex((part) => ["p", "reel", "tv", "video"].includes(part));
+    const marker = parts.findIndex((part) => ["p", "reel", "reels", "tv", "video", "photo"].includes(part));
     const id = marker >= 0 ? parts[marker + 1] : parts.at(-1);
     return `${url.hostname.includes("instagram") ? "instagram" : "tiktok"}-${id || Date.now()}`;
   } catch {

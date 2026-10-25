@@ -57,7 +57,8 @@ main { min-height: 290px; padding: 16px 20px; }
   letter-spacing: 0.08em;
 }
 
-.media-copy strong { display: block; font-size: 13px; }
+.media-copy { min-width: 0; }
+.media-copy strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
 .media-copy small { display: block; max-width: 190px; margin-top: 3px; overflow: hidden; color: #777e88; text-overflow: ellipsis; white-space: nowrap; }
 
 button {
