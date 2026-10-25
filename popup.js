@@ -4,6 +4,7 @@ const listElement = document.querySelector("#media-list");
 const refreshButton = document.querySelector("#refresh");
 const downloadAllButton = document.querySelector("#download-all");
 const versionElement = document.querySelector("#version");
+const folderButton = document.querySelector("#choose-folder");
 
 versionElement.textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -14,6 +15,7 @@ let resolveError = "";
 
 refreshButton.addEventListener("click", loadMedia);
 downloadAllButton.addEventListener("click", () => downloadItems(media));
+folderButton.addEventListener("click", () => openSaveWindow([]));
 loadMedia();
 
 async function loadMedia() {
@@ -85,27 +87,27 @@ async function downloadItems(items) {
   if (!items.length) return;
   const slug = postSlug(activeTab.url);
   const batchTimestamp = timestampSlug();
-  setStatus(`Starting ${items.length} download(s)...`);
-
-  let failures = 0;
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
+  const downloads = items.map((item, index) => {
     const extension = extensionFor(item);
     const filename = `ti_downloader-${slug}-${batchTimestamp}-${String(index + 1).padStart(2, "0")}.${extension}`;
-    const response = await chrome.tabs.sendMessage(activeTab.id, {
-      type: "DOWNLOAD_PAGE_MEDIA",
-      item,
-      filename
-    });
-    if (!response?.ok) {
-      failures += 1;
-      if (response?.error) resolveError = response.error;
-    }
-  }
+    return { item, filename };
+  });
+  await openSaveWindow(downloads);
+}
 
-  setStatus(failures
-    ? resolveError || `Started ${items.length - failures} download(s); ${failures} failed.`
-    : "Downloads started.");
+async function openSaveWindow(items) {
+  document.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "OPEN_DOWNLOAD_WINDOW", tabId: activeTab?.id, items
+    });
+    if (!response?.ok) throw new Error(response?.error || "Could not open the save window.");
+    window.close();
+  } catch (error) {
+    setStatus(error.message);
+    document.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+    downloadAllButton.disabled = !media.length;
+  }
 }
 
 function deduplicate(items) {

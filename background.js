@@ -1,24 +1,3 @@
-const ALLOWED_MEDIA_HOSTS = [
-  "instagram.com",
-  "cdninstagram.com",
-  "fbcdn.net",
-  "tiktok.com",
-  "tiktokcdn.com",
-  "tiktokcdn-us.com",
-  "tiktokv.com",
-  "byteoversea.com",
-  "ibytedtos.com",
-  "muscdn.com",
-  "akamaized.net"
-];
-const remoteDownloads = new Map();
-let creatingOffscreenDocument;
-
-chrome.downloads.onChanged.addListener((delta) => {
-  if (!delta.state || !["complete", "interrupted"].includes(delta.state.current)) return;
-  releaseRemoteDownload(delta.id).catch(() => {});
-});
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "CACHE_MEDIA" && sender.tab?.id) {
     chrome.storage.session
@@ -35,148 +14,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "DOWNLOAD_BLOB" && sender.tab?.id) {
-    downloadBlob(message.url, message.filename)
-      .then((downloadId) => sendResponse({ ok: true, downloadId }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
-    return true;
-  }
-
-  if (message?.type === "DOWNLOAD_INSTAGRAM_PROGRESSIVE" && sender.tab?.id) {
-    downloadInstagramProgressive(message.url, message.filename)
-      .then((downloadId) => sendResponse({ ok: true, downloadId }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
-    return true;
-  }
-
-  if (message?.type !== "DOWNLOAD_MEDIA") return;
-
-  downloadMedia(message.url, message.filename)
-    .then((downloadId) => sendResponse({ ok: true, downloadId }))
+  if (message?.type !== "OPEN_DOWNLOAD_WINDOW") return;
+  openDownloadWindow(sender.tab?.id ?? message.tabId, message.items)
+    .then(() => sendResponse({ ok: true }))
     .catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });
 
-async function downloadMedia(rawUrl, rawFilename) {
-  const url = new URL(rawUrl);
-  if (url.protocol !== "https:" || !isAllowedHost(url.hostname)) {
-    throw new Error("This media URL is not allowed.");
-  }
-
-  const filename = sanitizeFilename(rawFilename || "media");
-
-  return chrome.downloads.download({
-    url: url.href,
-    filename,
-    conflictAction: "uniquify",
-    saveAs: false
-  });
-}
-
-async function downloadBlob(rawUrl, rawFilename) {
-  const url = new URL(rawUrl);
-  if (url.protocol !== "blob:") throw new Error("Invalid Blob URL.");
-  const filename = sanitizeFilename(rawFilename || "media");
-  return chrome.downloads.download({
-    url: url.href,
-    filename,
-    conflictAction: "uniquify",
-    saveAs: false
-  });
-}
-
-async function downloadInstagramProgressive(rawUrl, rawFilename) {
-  const url = new URL(rawUrl);
-  if (url.protocol !== "https:" || !/(^|\.)(cdninstagram\.com|fbcdn\.net)$/.test(url.hostname)) {
-    throw new Error("The Instagram video URL could not be verified.");
-  }
-
-  await ensureOffscreenDocument();
-  const result = await chrome.runtime.sendMessage({
-    target: "offscreen",
-    type: "FETCH_REMOTE_VIDEO",
-    url: url.href
-  });
-  if (!result?.ok || !result.blobUrl) throw new Error(result?.error || "Failed to fetch the video.");
-
-  const filename = sanitizeFilename(rawFilename || "instagram-video.mp4");
-  let downloadId;
+async function openDownloadWindow(tabId, items) {
+  if (!Array.isArray(items) || items.length > 40) throw new Error("Invalid download list.");
+  if (items.length && (!Number.isInteger(tabId) || tabId < 0)) throw new Error("The source tab is unavailable.");
+  const key = `download:${crypto.randomUUID()}`;
+  await chrome.storage.session.set({ [key]: { tabId, items } });
   try {
-    downloadId = await chrome.downloads.download({
-      url: result.blobUrl,
-      filename,
-      conflictAction: "uniquify",
-      saveAs: false
+    await chrome.windows.create({
+      url: chrome.runtime.getURL(`download.html?job=${encodeURIComponent(key)}`),
+      type: "popup", width: 460, height: 420
     });
   } catch (error) {
-    await revokeOffscreenUrl(result.blobUrl);
+    await chrome.storage.session.remove(key);
     throw error;
   }
-
-  remoteDownloads.set(downloadId, result.blobUrl);
-  await Promise.allSettled([
-    chrome.storage.session.set({ [`remote-download:${downloadId}`]: result.blobUrl }),
-    chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "MARK_REMOTE_BLOB_IN_USE",
-      blobUrl: result.blobUrl,
-      downloadId
-    })
-  ]);
-  const current = await chrome.downloads.search({ id: downloadId }).catch(() => []);
-  if (current[0] && ["complete", "interrupted"].includes(current[0].state)) {
-    await releaseRemoteDownload(downloadId);
-  }
-  return downloadId;
-}
-
-async function ensureOffscreenDocument() {
-  const documentUrl = chrome.runtime.getURL("offscreen.html");
-  const contexts = await chrome.runtime.getContexts({
-    contextTypes: ["OFFSCREEN_DOCUMENT"],
-    documentUrls: [documentUrl]
-  });
-  if (contexts.length) return;
-  if (!creatingOffscreenDocument) {
-    creatingOffscreenDocument = chrome.offscreen.createDocument({
-      url: "offscreen.html",
-      reasons: ["BLOBS"],
-      justification: "Fetch verified Instagram progressive MP4 into an extension-owned Blob."
-    }).finally(() => {
-      creatingOffscreenDocument = undefined;
-    });
-  }
-  await creatingOffscreenDocument;
-}
-
-async function releaseRemoteDownload(downloadId) {
-  const key = `remote-download:${downloadId}`;
-  const stored = await chrome.storage.session.get(key);
-  const blobUrl = remoteDownloads.get(downloadId) || stored[key];
-  if (!blobUrl) return;
-  remoteDownloads.delete(downloadId);
-  await chrome.storage.session.remove(key);
-  await revokeOffscreenUrl(blobUrl);
-}
-
-async function revokeOffscreenUrl(blobUrl) {
-  await chrome.runtime.sendMessage({
-    target: "offscreen",
-    type: "REVOKE_REMOTE_BLOB",
-    blobUrl
-  }).catch(() => {});
-}
-
-function isAllowedHost(hostname) {
-  return ALLOWED_MEDIA_HOSTS.some(
-    (host) => hostname === host || hostname.endsWith(`.${host}`)
-  );
-}
-
-function sanitizeFilename(filename) {
-  return filename
-    .replace(/[<>:"|?*\\/]/g, "_")
-    .replace(/\.{2,}/g, ".")
-    .replace(/^[._]+/, "")
-    .slice(0, 180);
 }

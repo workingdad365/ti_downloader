@@ -20,9 +20,9 @@ window.addEventListener("message", (event) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === "DOWNLOAD_PAGE_MEDIA") {
-    downloadMedia(message.item, message.filename)
-      .then((response) => sendResponse(response))
+  if (message?.type === "PREPARE_PAGE_MEDIA") {
+    prepareMedia(message.item)
+      .then((media) => sendResponse({ ok: true, ...media }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
@@ -368,83 +368,49 @@ async function downloadFromOverlay(event, button) {
   button.disabled = true;
   setOverlayButtonState(button, "loading");
 
-  await refreshMedia();
-  refreshDownloadOverlays();
-  const kind = overlayHost?.dataset.mediaKind || "video";
-  const visibleUrl = overlayHost?.dataset.mediaUrl || "";
-  const visibleItem = {
-    url: visibleUrl,
-    kind,
-    score: Number.MAX_SAFE_INTEGER,
-    permalink: overlayHost?.dataset.permalink || location.href
-  };
-  const preferRuntimeVideo = kind === "video";
-  const item = !preferRuntimeVideo && isSafeMedia(visibleItem)
-    ? visibleItem
-    : mediaForUi().find((candidate) => candidate.kind === kind);
-  if (!item) {
-    showButtonResult(button, false, "Media not found");
-    return;
-  }
-
-  const extension = item.kind === "video" ? "mp4" : imageExtension(item.url);
-  const filename = `ti_downloader-${downloadSlug()}-${timestampSlug()}.${extension}`;
   try {
-    const response = await downloadMedia(item, filename);
-    showButtonResult(button, response?.ok, response?.ok ? "Download started" : "Download failed");
+    await refreshMedia();
+    refreshDownloadOverlays();
+    const kind = overlayHost?.dataset.mediaKind || "video";
+    const visibleUrl = overlayHost?.dataset.mediaUrl || "";
+    const visibleItem = {
+      url: visibleUrl,
+      kind,
+      score: Number.MAX_SAFE_INTEGER,
+      permalink: overlayHost?.dataset.permalink || location.href
+    };
+    const preferRuntimeVideo = kind === "video";
+    const item = !preferRuntimeVideo && isSafeMedia(visibleItem)
+      ? visibleItem
+      : mediaForUi().find((candidate) => candidate.kind === kind);
+    if (!item) {
+      showButtonResult(button, false, "Media not found");
+      return;
+    }
+
+    const extension = item.kind === "video" ? "mp4" : imageExtension(item.url);
+    const filename = `ti_downloader-${downloadSlug()}-${timestampSlug()}.${extension}`;
+    const response = await chrome.runtime.sendMessage({
+      type: "OPEN_DOWNLOAD_WINDOW", items: [{ item, filename }]
+    });
+    showButtonResult(button, response?.ok, response?.ok ? "Save window opened" : response?.error || "Download failed");
   } catch (error) {
     showButtonResult(button, false, error.message);
   }
 }
 
-async function downloadMedia(item, filename) {
+async function prepareMedia(item) {
+  if (!item || !["video", "image"].includes(item.kind)) throw new Error("No valid media is available.");
   if (location.hostname.endsWith("instagram.com") && item.kind === "video") {
     const permalink = item.permalink || getCurrentInstagramPermalink();
     const resolved = item.verified === true && isAllowedInstagramVideoUrl(item.url)
       ? { url: item.url, mediaId: item.mediaId }
       : await resolveInstagramProgressiveVideoCached(permalink);
     if (!resolved?.url) throw new Error("Could not resolve the source URL of the current Instagram video.");
-    return chrome.runtime.sendMessage({
-      type: "DOWNLOAD_INSTAGRAM_PROGRESSIVE",
-      url: resolved.url,
-      filename
-    });
+    return { source: "instagram-video", url: resolved.url };
   }
   if (!item?.url || !isSafeMedia(item)) throw new Error("No valid media URL is available.");
-  if (item.kind !== "video") {
-    return chrome.runtime.sendMessage({
-      type: "DOWNLOAD_MEDIA",
-      url: item.url,
-      filename
-    });
-  }
-
-  const response = await fetch(item.url, {
-    credentials: "include",
-    cache: "no-store",
-    headers: { Accept: "video/mp4,video/*;q=0.9,*/*;q=0.1" }
-  });
-  if (!response.ok) throw new Error(`Video request failed (${response.status}).`);
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.toLowerCase().includes("video") && !contentType.toLowerCase().includes("octet-stream")) {
-    throw new Error(`The response is not a video (${contentType || "unknown"}).`);
-  }
-
-  const blob = await response.blob();
-  if (blob.size === 0) throw new Error("The video file is empty.");
-  const blobUrl = URL.createObjectURL(blob);
-  try {
-    const result = await chrome.runtime.sendMessage({
-      type: "DOWNLOAD_BLOB",
-      url: blobUrl,
-      filename
-    });
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-    return result;
-  } catch (error) {
-    URL.revokeObjectURL(blobUrl);
-    throw error;
-  }
+  return { source: item.kind === "video" ? "page-video" : "image", url: item.url };
 }
 
 async function resolveInstagramProgressiveVideoCached(permalink) {
@@ -640,7 +606,7 @@ function setOverlayButtonState(button, state, label) {
   const accessibleLabel = label || {
     download: "Download",
     loading: "Finding media",
-    success: "Download started",
+    success: "Save window opened",
     error: "Download failed"
   }[state];
   button.setAttribute("aria-label", accessibleLabel);

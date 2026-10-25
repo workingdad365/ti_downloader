@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tiktok Instagram Downloader",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "minimum_chrome_version": "116",
   "description": "Download media from the current Instagram or TikTok post.",
   "icons": {
@@ -10,7 +10,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["activeTab", "downloads", "storage", "offscreen"],
+  "permissions": ["activeTab", "storage"],
   "host_permissions": [
     "*://*.instagram.com/*",
     "*://*.cdninstagram.com/*",
@@ -38,7 +38,7 @@
   "content_scripts": [
     {
       "matches": ["*://*.instagram.com/*", "*://*.tiktok.com/*"],
-      "js": ["content.js"],
+      "js": ["page-stream.js", "content.js"],
       "run_at": "document_start"
     },
     {
